@@ -1,19 +1,48 @@
-# 🎈 Blank app template
+# 🏭 ZipForge AI
 
-A simple Streamlit app template for you to modify!
+บริษัท AI ที่เปลี่ยน **ไฟล์ ZIP ของคุณให้เป็นเว็บแอป** — อัปโหลดแล้วได้เว็บแอปพร้อมใช้งาน ดูตัวอย่างสด และดาวน์โหลดไปขึ้นโฮสต์ได้ทันที
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://blank-app-template.streamlit.app/)
+## ทำอะไรได้บ้าง
 
-### How to run it on your own machine
+| สิ่งที่อยู่ใน ZIP | เว็บแอปที่ได้ (โหมดอัตโนมัติ — ฟรี ไม่ต้องใช้ API key) |
+|---|---|
+| เว็บไซต์ HTML/CSS/JS | รวมทุกอย่าง (CSS, JS, รูปภาพ) เป็นไฟล์ `index.html` ไฟล์เดียว |
+| CSV / Excel / JSON | แดชบอร์ดข้อมูล: ตารางค้นหา/เรียงได้ สถิติ และกราฟ |
+| Markdown / ข้อความ | เว็บไซต์เอกสาร พร้อมเมนูนำทางและค้นหา |
+| รูปภาพ | เว็บแกลเลอรี พร้อมดูภาพขนาดใหญ่ |
+| ซอร์สโค้ดอื่น ๆ | เว็บเบราว์เซอร์ซอร์สโค้ด |
 
-1. Install the requirements
+**โหมด AI (Claude):** ทีม AI อ่านไฟล์ทั้งหมดในโปรเจกต์แล้วเขียนเว็บแอปใหม่ที่ทำงานได้จริงในเบราว์เซอร์
+— เช่น แปลงแอป Python/Streamlit/React source เป็นเว็บแอปไฟล์เดียว และรับคำสั่งเพิ่มเติมได้ ("ทำธีมสีเขียว มีปุ่มส่งออก CSV")
 
-   ```
-   $ pip install -r requirements.txt
-   ```
+## วิธีใช้งาน
 
-2. Run the app
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
 
-   ```
-   $ streamlit run streamlit_app.py
-   ```
+1. อัปโหลดไฟล์ `.zip` (หรือกด "ดาวน์โหลด ZIP ตัวอย่าง" ที่แถบซ้ายเพื่อทดลอง)
+2. ดูรายงานการวิเคราะห์ แล้วเลือกโหมด **อัตโนมัติ** หรือ **AI**
+3. กด **🚀 สร้างเว็บแอป** → ดูตัวอย่างสด → ดาวน์โหลด `index.html` หรือชุด `.zip` พร้อมขึ้นโฮสต์
+4. เผยแพร่ฟรีด้วย [Netlify Drop](https://app.netlify.com/drop) หรือ GitHub Pages
+
+### ตั้งค่า API key สำหรับโหมด AI
+
+ใส่ในช่องที่แถบซ้าย หรือตั้งค่าแบบถาวร:
+
+- ตัวแปรสภาพแวดล้อม `ANTHROPIC_API_KEY`, หรือ
+- `.streamlit/secrets.toml` (บน Streamlit Community Cloud: Settings → Secrets):
+  ```toml
+  ANTHROPIC_API_KEY = "sk-ant-..."
+  ```
+
+## โครงสร้างโค้ด
+
+- `streamlit_app.py` — หน้าเว็บของบริษัท (อัปโหลด, วิเคราะห์, สร้าง, ดูตัวอย่าง, ดาวน์โหลด)
+- `zipforge/extract.py` — แตก ZIP อย่างปลอดภัยในหน่วยความจำ (กัน path traversal / zip bomb)
+- `zipforge/analyze.py` — ตรวจชนิดโปรเจกต์และเฟรมเวิร์ก
+- `zipforge/builders.py` — ตัวสร้างเว็บแอปแบบอัตโนมัติ
+- `zipforge/ai.py` — ตัวสร้างเว็บแอปด้วย Claude
+
+ตัวอย่างสดแสดงใน iframe แบบ `data:` URL ซึ่งแยก origin ออกจากแอป โค้ดที่อัปโหลดหรือที่ AI เขียนจึงเข้าถึงแอปหลักไม่ได้
