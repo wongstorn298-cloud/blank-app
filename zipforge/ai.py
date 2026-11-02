@@ -76,25 +76,29 @@ def extract_html(text: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
-def generate_app(
-    api_key: str,
-    project: Project,
-    analysis: Analysis,
-    instructions: str = "",
-    effort: str = "high",
-    on_progress: Callable[[int], None] | None = None,
-) -> str:
-    client = anthropic.Anthropic(api_key=api_key)
-    user = build_context(project, analysis)
-    user += "\n\n## Customer request\n" + (instructions.strip() or "Build the best possible web app from these files.")
+PROMPT_SYSTEM = """You are the senior web team of ZipForge AI. The customer describes a website or web \
+app in their own words; you build it as ONE complete, self-contained HTML file.
 
+Rules:
+- Output only the HTML file in one ```html fenced block. No explanations before or after it.
+- Inline all CSS and JS. External libraries are allowed only from https://cdn.jsdelivr.net or \
+https://cdnjs.cloudflare.com with exact pinned versions.
+- Make it fully working, not a mockup: real interactions, sensible sample content where the customer \
+gave none, and no broken links or placeholder buttons.
+- Responsive design that works on phones, with a clean modern look and light/dark support.
+- Write the UI in the language the customer wrote in (Thai request -> Thai UI)."""
+
+
+def _run(api_key: str, system: str, user: str, effort: str,
+         on_progress: Callable[[int], None] | None) -> str:
+    client = anthropic.Anthropic(api_key=api_key)
     with client.beta.messages.stream(
         model=MODEL,
         max_tokens=64000,
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
         output_config={"effort": effort},
-        system=SYSTEM_PROMPT,
+        system=system,
         messages=[{"role": "user", "content": user}],
     ) as stream:
         chars = 0
@@ -113,3 +117,27 @@ def generate_app(
             raise RuntimeError("ผลลัพธ์ยาวเกินขีดจำกัด — ลองลดขนาดโปรเจกต์หรือขอให้ AI ทำแอปให้กระชับขึ้น")
         raise RuntimeError("AI ไม่ได้ส่งไฟล์ HTML กลับมา กรุณาลองใหม่")
     return html
+
+
+def generate_app(
+    api_key: str,
+    project: Project,
+    analysis: Analysis,
+    instructions: str = "",
+    effort: str = "high",
+    on_progress: Callable[[int], None] | None = None,
+) -> str:
+    """Build a web app from the files of an uploaded ZIP."""
+    user = build_context(project, analysis)
+    user += "\n\n## Customer request\n" + (instructions.strip() or "Build the best possible web app from these files.")
+    return _run(api_key, SYSTEM_PROMPT, user, effort, on_progress)
+
+
+def generate_from_prompt(
+    api_key: str,
+    description: str,
+    effort: str = "high",
+    on_progress: Callable[[int], None] | None = None,
+) -> str:
+    """Build a website from a plain-language description."""
+    return _run(api_key, PROMPT_SYSTEM, description.strip(), effort, on_progress)
