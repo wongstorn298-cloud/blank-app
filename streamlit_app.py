@@ -12,20 +12,14 @@ from datetime import datetime
 
 import streamlit as st
 
-from zipforge import hosting
+from zipforge import agents, hosting
 from zipforge.analyze import analyze
 from zipforge.builders import build_auto, package_site
 from zipforge.extract import ZipError, load_zip
+from zipforge.office import render as render_office
 
 st.set_page_config(page_title="ZipForge AI", page_icon="🏭", layout="wide")
 
-TEAM = [
-    ("🕵️", "Analyst", "แตกไฟล์ ZIP และวิเคราะห์ชนิดโปรเจกต์"),
-    ("📐", "Architect", "วางแผนโครงสร้างเว็บแอปที่เหมาะสม"),
-    ("👩‍💻", "Developer", "เขียน/ประกอบโค้ดเว็บแอป"),
-    ("✅", "QA", "ตรวจสอบผลลัพธ์และเตรียมไฟล์พร้อมใช้งาน"),
-    ("🚀", "DevOps", "นำเว็บขึ้นออนไลน์และดูแลสิทธิ์การเข้าถึง"),
-]
 
 state = st.session_state
 state.setdefault("owner_keys", {})   # slug -> owner key, for sites this browser session manages
@@ -131,6 +125,8 @@ def publish_panel(html: str, default_title: str, key: str) -> None:
                 st.error(str(exc))
                 return
             state.owner_keys[site.slug] = owner_key
+            agents.resolve_by_title(default_title)
+            agents.log_done("devops", f"เผยแพร่ {site.slug} ({hosting.ACCESS_LEVELS[access].split(' — ')[0]})")
             st.success(f"✅ เว็บไซต์ออนไลน์แล้ว: {site_url(site.slug)}")
             st.code(site_url(site.slug), language=None)
             st.markdown("**🔐 คีย์เจ้าของ** (ใช้แก้ไข/เปลี่ยนสิทธิ์/ลบเว็บ — เก็บไว้ให้ดี จะแสดงครั้งเดียว):")
@@ -226,8 +222,8 @@ with st.sidebar:
     st.markdown("## 🏭 ZipForge AI")
     st.caption("บริษัท AI ที่เปลี่ยนไฟล์ของคุณให้เป็นเว็บไซต์จริง")
     st.markdown("### 👥 ทีมงาน AI ของเรา")
-    for icon, role, desc in TEAM:
-        st.markdown(f"{icon} **{role}** — {desc}")
+    for a in agents.AGENTS:
+        st.markdown(f"{a['emoji']} **{a['name']}** ({a['role']}) — {a['desc']}")
 
     st.divider()
     st.markdown("### 🔑 AI Engine (Claude)")
@@ -255,24 +251,40 @@ c2.info("**2. AI สร้าง HTML** 🤖\n\nได้เว็บไฟล�
 c3.info("**3. เผยแพร่** 🌐\n\nได้ลิงก์เว็บไซต์จริงทันที")
 c4.info("**4. ควบคุมสิทธิ์** 🔐\n\nสาธารณะ / รหัสผ่าน / เฉพาะอีเมล / ส่วนตัว")
 
-tab_zip, tab_prompt, tab_sites = st.tabs(["📦 ZIP → เว็บแอป", "✨ สร้าง HTML ด้วย AI", "🌐 เว็บไซต์ของฉัน"])
+tab_office, tab_zip, tab_prompt, tab_sites = st.tabs(
+    ["🏢 ออฟฟิศ AI", "📦 ZIP → เว็บแอป", "✨ สร้าง HTML ด้วย AI", "🌐 เว็บไซต์ของฉัน"])
 
 
 # ============================================================================= tab: zip
-def run_build(use_ai: bool, project, analysis, instructions: str) -> str:
-    st.write(f"{TEAM[0][0]} **Analyst**: วิเคราะห์ {len(project.files)} ไฟล์ — {analysis.label}")
-    st.write(f"{TEAM[1][0]} **Architect**: วางแผน{'ให้ AI เขียนแอปใหม่' if use_ai else 'ใช้เทมเพลตที่เหมาะกับประเภทไฟล์'}")
-    st.write(f"{TEAM[2][0]} **Developer**: กำลังสร้างเว็บแอป...")
-    started = time.time()
-    if use_ai:
-        from zipforge.ai import generate_app
+def say(agent_id: str, text: str) -> None:
+    a = agents.AGENT_BY_ID[agent_id]
+    st.write(f"{a['emoji']} **{a['name']}** ({a['role']}): {text}")
 
-        progress = st.empty()
-        html = generate_app(api_key, project, analysis, instructions, effort,
-                            on_progress=lambda n: progress.caption(f"✍️ เขียนโค้ดแล้ว {n:,} ตัวอักษร..."))
-    else:
-        html = build_auto(project, analysis)
-    st.write(f"{TEAM[3][0]} **QA**: ตรวจสอบแล้ว ({len(html) / 1024:,.1f} KB, {time.time() - started:.1f} วินาที)")
+
+def run_build(use_ai: bool, project, analysis, instructions: str) -> str:
+    name = project.name
+    say("analyst", f"วิเคราะห์ {len(project.files)} ไฟล์ — {analysis.label}")
+    agents.log_done("analyst", f"วิเคราะห์ {name}")
+    say("architect", "วางแผน" + ("ให้ AI เขียนแอปใหม่" if use_ai else "ใช้เทมเพลตที่เหมาะกับประเภทไฟล์"))
+    agents.log_done("architect", f"วางแผนเว็บ {name}")
+    say("developer", "กำลังสร้างเว็บแอป...")
+    dev_task = agents.add_task("developer", f"สร้างเว็บ {name}")
+    started = time.time()
+    try:
+        if use_ai:
+            from zipforge.ai import generate_app
+
+            progress = st.empty()
+            html = generate_app(api_key, project, analysis, instructions, effort,
+                                on_progress=lambda n: progress.caption(f"✍️ เขียนโค้ดแล้ว {n:,} ตัวอักษร..."))
+        else:
+            html = build_auto(project, analysis)
+    finally:
+        agents.set_status(dev_task, "done")
+    say("qa", f"ตรวจสอบแล้ว ({len(html) / 1024:,.1f} KB, {time.time() - started:.1f} วินาที)")
+    agents.log_done("qa", f"ตรวจสอบ {name}")
+    agents.submit_for_approval(name, html)
+    say("secretary", "ส่งงานเข้ากล่องอนุมัติแล้ว — อนุมัติได้ที่แท็บ 🏢 ออฟฟิศ AI หรือเผยแพร่ด้านล่าง")
     return html
 
 
@@ -355,9 +367,17 @@ with tab_prompt:
                 from zipforge.ai import generate_from_prompt
 
                 progress = st.empty()
-                html = generate_from_prompt(
-                    api_key, description, effort,
-                    on_progress=lambda n: progress.caption(f"✍️ เขียนโค้ดแล้ว {n:,} ตัวอักษร..."))
+                prompt_name = hosting.normalize_slug(site_name) or "my-website"
+                say("developer", "กำลังเขียนเว็บไซต์จากคำอธิบาย...")
+                dev_task = agents.add_task("developer", f"เขียนเว็บ {prompt_name}")
+                try:
+                    html = generate_from_prompt(
+                        api_key, description, effort,
+                        on_progress=lambda n: progress.caption(f"✍️ เขียนโค้ดแล้ว {n:,} ตัวอักษร..."))
+                finally:
+                    agents.set_status(dev_task, "done")
+                agents.log_done("qa", f"ตรวจสอบ {prompt_name}")
+                agents.submit_for_approval(prompt_name, html)
                 state["prompt_result"] = {"html": html, "name": site_name}
                 status.update(label="✅ สร้าง HTML สำเร็จ!", state="complete", expanded=False)
             except Exception as exc:  # noqa: BLE001
@@ -437,3 +457,62 @@ with tab_sites:
                 st.dataframe([{"ชื่อ": s.title, "ลิงก์": site_url(s.slug), "สิทธิ์": hosting.ACCESS_LEVELS[s.access],
                                "เข้าชม": s.views, "อัปเดต": datetime.fromtimestamp(s.updated)} for s in sites],
                              width="stretch")
+
+
+# ============================================================================= tab: office (rendered last so it reflects work done in this run)
+with tab_office:
+    team = agents.agent_states()
+    st.iframe("data:text/html;charset=utf-8;base64," +
+              base64.b64encode(render_office(team).encode()).decode(), height=620)
+    st.caption("🖱️ ลากเพื่อหมุน · เลื่อนเพื่อซูม · คลิกที่ตัวละครเพื่อดูว่ากำลังทำอะไร")
+
+    left, right = st.columns([3, 2])
+    with left:
+        st.markdown("### 📋 รายงานจากเลขา (24 ชม.ล่าสุด)")
+        rep = agents.daily_report()
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("งานที่เสร็จ", rep["tasks_today"])
+        r2.metric("เว็บที่สร้าง", rep["builds_today"])
+        r3.metric("เผยแพร่ใหม่", rep["published_today"])
+        r4.metric("ผู้เข้าชมรวม", f"{rep['views']:,}")
+        busy = [a for a in team if a["status"] != "idle"]
+        summary = (f"วันนี้ทีมทำงานเสร็จ {rep['tasks_today']} งาน มีเว็บออนไลน์ทั้งหมด {rep['sites']} เว็บ")
+        summary += f" และมี **{rep['waiting']} งานรออนุมัติ** จากคุณ" if rep["waiting"] else " ไม่มีงานค้างอนุมัติ"
+        st.info("💬 **มิว (เลขา):** " + summary + ("" if busy else " — ตอนนี้ทุกคนว่าง พร้อมรับงานใหม่ค่ะ"))
+
+        st.markdown("### 👥 ทีม")
+        for a in team:
+            label, color = agents.STATUS[a["status"]]
+            st.markdown(f"{a['emoji']} **{a['name']}** · {a['role']} — "
+                        f"<span style='color:{color}'>● {label}</span> · {a['task']}",
+                        unsafe_allow_html=True)
+
+    with right:
+        st.markdown("### 📥 กล่องอนุมัติ")
+        items = agents.inbox()
+        if not items:
+            st.success("ไม่มีงานรออนุมัติ 🎉")
+        for t in reversed(items):
+            with st.container(border=True):
+                title = t["title"].split(": ", 1)[-1]
+                st.markdown(f"**{title}**")
+                st.caption(f"ส่งเมื่อ {datetime.fromtimestamp(t['created']):%d/%m %H:%M}")
+                html_doc = agents.pending_html(t["id"])
+                a1, a2 = st.columns(2)
+                if a1.button("✅ อนุมัติ+เผยแพร่", key=f"ap-{t['id']}", type="primary", disabled=html_doc is None):
+                    site, owner_key = hosting.publish(html_doc, title, title, "public")
+                    state.owner_keys[site.slug] = owner_key
+                    agents.resolve(t["id"], True)
+                    agents.log_done("devops", f"เผยแพร่ {site.slug} (สาธารณะ)")
+                    state["approved_msg"] = (site_url(site.slug), owner_key)
+                    st.rerun()
+                if a2.button("🗑️ ปฏิเสธ", key=f"rj-{t['id']}"):
+                    agents.resolve(t["id"], False)
+                    st.rerun()
+        if state.get("approved_msg"):
+            url, owner_key = state["approved_msg"]
+            st.success(f"เผยแพร่แล้ว (สาธารณะ): {url}")
+            st.markdown("🔐 คีย์เจ้าของ (เปลี่ยนสิทธิ์ได้ที่แท็บ 🌐 เว็บไซต์ของฉัน):")
+            st.code(owner_key, language=None)
+        st.caption("งานที่สร้างเสร็จจะเข้ามารอที่นี่ อนุมัติแล้วจะเผยแพร่แบบสาธารณะทันที "
+                   "หรือเลือกสิทธิ์อื่นได้จากปุ่มเผยแพร่ใต้ผลงาน")
