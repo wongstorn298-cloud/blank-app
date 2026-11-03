@@ -279,6 +279,8 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- ชีตเริ่มต้น (ไม่บังคับ): ใส่ {"sources":[{"name":"…","url":"https://docs.google.com/spreadsheets/d/…"}],"active":0} -->
+<script type="application/json" id="sourcesConfig">{"sources":[]}</script>
 <script>
 const EMBED = null; // ข้อมูลจริงถูกนำออก ห้าม commit ข้อมูลจริงเข้า repo — ใช้ samples/*.xlsx (ข้อมูลจำลอง) แทน
 const GS_BASE = (() => { // ?gsbase= ใช้ทดสอบบน localhost เท่านั้น: บนเว็บจริงจะไม่ยอมให้ลิงก์ใครเปลี่ยนปลายทางที่ดึงข้อมูล
@@ -507,6 +509,11 @@ function tipHtml(c, i){
   if (c.stacked && c.series.length > 1 && any) rows += `<div class="r"><span>รวม</span><b>${fmt(tot)}</b></div>`;
   const ft = c.foot ? c.foot(i) : ''; return `<h4>${esc(c.tipCats ? c.tipCats[i] : c.cats[i])}</h4>${rows}${ft ? `<div class="ft">${ft}</div>` : ''}`;
 }
+const measureCtx = document.createElement('canvas').getContext('2d');
+function labelStep(cats, band){   // ทุก 1, 2, 3, 4, 6, 12 … ป้าย (ลงตัวกับเดือน/ไตรมาส/ปี) ให้ป้ายห่างกันอย่างน้อย 10px
+  if (!cats.length) return 1; measureCtx.font = '11px ' + (getComputedStyle(document.body).getPropertyValue('--font').trim() || 'sans-serif');
+  const need = (Math.max(...cats.map(t => measureCtx.measureText(String(t)).width)) + 10) / band;
+  if (need <= 1) return 1; return [2, 3, 4, 6, 12, 24, 36, 60].find(k => k >= need) || Math.ceil(need); }
 function frame(el, c){
   const W = Math.max(240, el.clientWidth), H = c.h || 250, n = c.cats.length;
   const ml = 46, mr = 8, mt = 18, mb = 26, pw = W - ml - mr, ph = H - mt - mb;
@@ -516,7 +523,7 @@ function frame(el, c){
   let g = '';
   for (let t = 0; t <= 4; t++) { const v = top * t / 4, yy = y(v);
     g += `<line x1="${ml}" x2="${W-mr}" y1="${yy}" y2="${yy}" style="stroke:var(${t ? '--grid' : '--axis'})" stroke-width="1"/><text x="${ml-8}" y="${yy+4}" text-anchor="end">${(c.yfmt || compact)(v)}</text>`; }
-  const skip = band < 31 ? 2 : 1;
+  const skip = labelStep(c.cats, band);   // เว้นป้ายแกน x ตามความกว้างจริง ไม่ให้ตัวหนังสือซ้อนกัน (เช่น เลือก "ทั้งหมด" ~60 เดือน)
   c.cats.forEach((lab, i) => { if (i % skip === 0) g += `<text x="${ml + band*(i+.5)}" y="${H-8}" text-anchor="middle">${esc(lab)}</text>`; });
   return { W, H, n, ml, mr, mt, mb, pw, ph, y, band, g, top };
 }
@@ -854,8 +861,8 @@ function persist(){ try { localStorage.setItem('dna-src-v2', JSON.stringify({ ac
 async function seedSources(){
   let saved = null; try { saved = JSON.parse(localStorage.getItem('dna-src-v2') || 'null'); } catch (e) {}
   if (saved && saved.sources && saved.sources.length) { S.sources = saved.sources; S.active = saved.sources.some(s => s.id === saved.active) ? saved.active : saved.sources[0].id; return; }
-  try { const r = await fetch('sources.json', { cache: 'no-store' }); if (r.ok) { const j = await r.json();
-    if (j.sources && j.sources.length) { S.sources = j.sources.map(s => ({ id: uid(), type: 'gsheet', tpl: 'auto', interval: 30, ...s })); S.active = S.sources[Math.min(j.active || 0, S.sources.length - 1)].id; return; } } } catch (e) {}
+  try { const j = JSON.parse(($('#sourcesConfig') || {}).textContent || '{}');   // ตั้งชีตเริ่มต้นได้ในแท็ก <script id="sourcesConfig"> (เดิมโหลด sources.json ซึ่งไม่มีไฟล์ จึงขึ้น 404 ทุกครั้ง)
+    if (j.sources && j.sources.length) { S.sources = j.sources.map(s => ({ id: uid(), type: 'gsheet', tpl: 'auto', interval: 30, ...s })); S.active = S.sources[Math.min(j.active || 0, S.sources.length - 1)].id; return; } } catch (e) {}
   S.sources = [{ id: 'sample-lab', name: 'ตัวอย่าง · งานตรวจ DNA (Lot / งบประมาณ)', type: 'sample', key: 'lab', tpl: 'lab' }, { id: 'sample-cases', name: 'ตัวอย่าง · คดีส่งตรวจ DNA (รายคดี)', type: 'sample', key: 'cases', tpl: 'cases' }];
   S.active = 'sample-lab';
 }

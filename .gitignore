@@ -169,3 +169,7 @@ cython_debug/
 !dashboard/samples/*.xlsx
 .clasprc.json
 .env
+
+# Apps Script tests: ผลลัพธ์ชั่วคราว (ข้อมูลจำลองที่แปลงแล้ว, ภาพหน้าจอ)
+apps-script/test/.out/
+node_modules/
