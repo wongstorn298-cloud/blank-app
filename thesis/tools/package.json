@@ -1,0 +1,8 @@
+{
+  "name": "thesis-tools",
+  "private": true,
+  "description": "ตัวแปลง Mermaid เป็น PNG สำหรับ build_thesis.py (ใช้ Chromium ของ Playwright)",
+  "dependencies": {
+    "mermaid": "11.4.1"
+  }
+}
