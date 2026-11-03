@@ -85,7 +85,7 @@ COVER_MARGIN = dict(left=1440, right=1440, top=2880, bottom=1134, header=0, foot
 TEXT_W = PAGE_W - MARGIN["left"] - MARGIN["right"]          # 8306 twip = 14.65 ซม.
 FIRST_LINE = 1080
 SZ_BODY, SZ_CHAPTER, SZ_COVER = 16, 18, 20
-INFO_TAB = 2160
+INFO_TAB = 2400   # template ใช้ 2160 แต่ "อาจารย์ที่ปรึกษา" ตัวหนา 16pt กว้างประมาณ 2200 twip จนค่าเลื่อนไปแท็บถัดไป
 
 LOG: list[str] = []
 
@@ -1084,7 +1084,7 @@ class Builder:
     def abstract_en(self, body_paras):
         self.info_block([
             ("Project Title", META["title_en"], False),
-            ("Student", f"{META['author_en']}  Student ID {META['student_id']}", False),
+            ("Author", f"{META['author_en']}  Student ID {META['student_id']}", False),
             ("Advisor", META["advisor_en"], False),
             ("Semester", f"{META['semester']}/{META['year']}", False),
         ])
@@ -1098,10 +1098,16 @@ class Builder:
 
     def acknowledgement(self, body_paras):
         self.heading1("กิตติกรรมประกาศ")
+        # บรรทัดสั้นท้ายร่าง (ชื่อผู้จัดทำ, เดือน ปี) คือส่วนลงชื่อ: จัดชิดขวาแทนคำว่า "ผู้จัดทำ" ใน template
+        sign = []
+        while body_paras and vis_len(plain(body_paras[-1])) <= 60 and not body_paras[-1].rstrip().endswith(("ต่อไป", ".")):
+            sign.insert(0, body_paras[-1])
+            body_paras = body_paras[:-1]
         for t in body_paras:
             self.body_para(t)
         self.para()
-        self.para("ผู้จัดทำ", align=WD_ALIGN_PARAGRAPH.RIGHT)
+        for t in sign or ["ผู้จัดทำ"]:
+            self.para(t, align=WD_ALIGN_PARAGRAPH.RIGHT)
 
     def toc_page(self, kind: str):
         title = {"toc": "สารบัญ", "tables": "สารบัญตาราง", "figures": "สารบัญรูป"}[kind]
@@ -1599,14 +1605,18 @@ def check_drafts(chapters: list[Chapter], reg: RefRegistry) -> list[str]:
 
 def collect_todos(chapters, front_texts) -> list[str]:
     out = []
-    for ch in chapters:
-        for ln_no, ln in enumerate(ch.path.read_text(encoding="utf-8").split("\n"), 1):
+    # บทที่ 1–5 + ไฟล์ส่วนหน้า/ภาคผนวก (บทคัดย่อ, Abstract, กิตติกรรมประกาศ, ภาคผนวก)
+    paths = [ch.path for ch in chapters]
+    for pat in ("*บทคัดย่อ*.md", "*[Aa]bstract*.md", "*กิตติกรรมประกาศ*.md", "*ภาคผนวก*.md"):
+        paths += sorted(DRAFTS.glob(pat))[:1]
+    for path in paths:
+        for ln_no, ln in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
             if ln.lstrip().startswith(">"):
                 continue
             for m in re.finditer(r"\[รอใส่[^\]]*\]", ln):
                 if m.group(0) in ("[รอใส่]", "[รอใส่: ...]") and "เครื่องหมาย" in ln:
                     continue
-                out.append(f"{ch.path.name}:{ln_no} {m.group(0)}")
+                out.append(f"{path.name}:{ln_no} {m.group(0)}")
     for where, t in front_texts:
         for m in re.finditer(r"\[รอใส่[^\]]*\]", t):
             out.append(f"{where}: {m.group(0)}")
@@ -1734,8 +1744,8 @@ def drafts_version() -> str:
     try:
         head = subprocess.run(["git", "-C", str(ROOT), "log", "-1", "--format=%h %ci", "--", "thesis/drafts"],
                               capture_output=True, text=True).stdout.strip()
-        dirty = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain", "--", "thesis/drafts"],
-                               capture_output=True, text=True).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(ROOT), "-c", "core.quotePath=false", "status", "--porcelain", "--", "thesis/drafts"],
+                               capture_output=True, text=True).stdout.rstrip()
     except Exception:
         head, dirty = "?", ""
     h = hashlib.sha1()
