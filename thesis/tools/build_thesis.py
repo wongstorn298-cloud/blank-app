@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """สร้างเล่มโครงงานรูปแบบ มทส. จากร่าง Markdown
 
-    python3 thesis/tools/build_thesis.py
+    python3 thesis/tools/build_thesis.py [--drafts DIR] [--out DIR]
 
 อ่าน   thesis/drafts/*.md   และ   thesis/template/*.docx
 เขียน  thesis/build/เล่มโครงงาน.docx, thesis/build/เล่มโครงงาน.pdf,
@@ -98,6 +98,8 @@ def log(kind: str, msg: str):
 # 1) อ่านและแยกโครงสร้าง Markdown
 # ===========================================================================
 RE_FIG = re.compile(r"^\[รูปที่\s*([\d.]+)\s*[:：]\s*(.*)\]\s*$")
+# ภาพจากไฟล์: ![รูปที่ x.y: คำอธิบาย](../figures/ชื่อไฟล์.png)  (path นับจากโฟลเดอร์ของไฟล์ร่าง)
+RE_IMG = re.compile(r"^!\[รูปที่\s*([\d.]+)\s*[:：]\s*(.*)\]\(\s*<?([^)>]+?)>?\s*\)\s*$")
 RE_LI = re.compile(r"^(\s*)((?:\d+\.)*\d+\)|[-*+]|\d+\.)\s+(.*)$")
 RE_HEAD = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 RE_REFHEAD = re.compile(r"^(เอกสารอ้างอิง|แหล่งอ้างอิง|บรรณานุกรม|References)")
@@ -211,6 +213,14 @@ def parse_markdown(path: Path) -> Chapter:
             i = j
             in_list = False
             continue
+        # figure from image file
+        m = RE_IMG.match(s)
+        if m:
+            blocks.append(dict(t="fig", num=m.group(1).rstrip("."), desc=m.group(2).strip(), line=lineno,
+                               img=(path.parent / m.group(3).strip()).resolve(), img_src=m.group(3).strip()))
+            i += 1
+            in_list = False
+            continue
         # figure placeholder
         m = RE_FIG.match(s)
         if m:
@@ -239,7 +249,7 @@ def parse_markdown(path: Path) -> Chapter:
         j = i + 1
         while j < n:
             t = lines[j].strip()
-            if (not t or t.startswith(("#", "|", ">", "```", "$$", "[รูปที่")) or RE_LI.match(lines[j])
+            if (not t or t.startswith(("#", "|", ">", "```", "$$", "[รูปที่", "![รูปที่")) or RE_LI.match(lines[j])
                     or re.fullmatch(r"(-{3,}|\*{3,})", t)):
                 break
             buf.append(t)
@@ -1169,6 +1179,8 @@ class Builder:
                 self.para(b["text"], left=self._li_text_indent(lvl), first=0)
             elif t == "table":
                 self.table(b)
+            elif t == "fig" and b.get("img"):
+                self.figure_file(b, ch)
             elif t == "fig":
                 self.figure_placeholder(b)
             elif t == "code" and b["lang"] == "mermaid":
@@ -1302,6 +1314,38 @@ class Builder:
         p.add_run().add_picture(str(png), width=Emu(int(w * scale)), height=Emu(int(h * scale)))
         if fig["num"] != "?":
             self._fig_caption(fig["num"], title)
+
+    # ภาพจากไฟล์: กว้างไม่เกินความกว้างข้อความ สูงไม่เกิน 60% ของความสูงข้อความ คงสัดส่วน กึ่งกลาง
+    IMG_MAX_W = TEXT_W
+    IMG_MAX_H = int((PAGE_H - MARGIN["top"] - MARGIN["bottom"]) * 0.6)
+
+    def figure_file(self, b, ch):
+        title = b["desc"].split(" — ", 1)[0]
+        img = b["img"]
+        where = f"{ch.path.name}:{b['line']}"
+        if not img.is_file():
+            log("ภาพ", f"ERROR {where} ไม่พบไฟล์ภาพของรูปที่ {b['num']}: {b['img_src']} — ใส่กรอบรอใส่ภาพแทน")
+            self.figure_placeholder(dict(num=b["num"], desc=title + f" — ไม่พบไฟล์ {b['img_src']}"))
+            return
+        try:
+            from PIL import Image
+            with Image.open(img) as im:
+                w, h = im.size
+                dpi = im.info.get("dpi", (96, 96))[0] or 96
+        except Exception as e:
+            log("ภาพ", f"ERROR {where} เปิดไฟล์ภาพของรูปที่ {b['num']} ไม่ได้ ({b['img_src']}: {e}) — ใส่กรอบรอใส่ภาพแทน")
+            self.figure_placeholder(dict(num=b["num"], desc=title + f" — เปิดไฟล์ {b['img_src']} ไม่ได้"))
+            return
+        # ขนาดตามธรรมชาติ (twip) ไม่ขยายภาพเล็กเกินขนาดจริง เพื่อไม่ให้แตก
+        nat_w, nat_h = w / max(dpi, 72) * 1440, h / max(dpi, 72) * 1440
+        scale = min(self.IMG_MAX_W / nat_w, self.IMG_MAX_H / nat_h, 1.0)
+        tw, th = nat_w * scale, nat_h * scale
+        if th >= self.IMG_MAX_H - 1 and h > w:
+            log("ภาพ", f"{where} รูปที่ {b['num']} เป็นภาพแนวตั้ง จำกัดความสูงไว้ที่ {self.IMG_MAX_H / 567:.1f} ซม.")
+        p = self.doc.add_paragraph()
+        pfmt(p, align=WD_ALIGN_PARAGRAPH.CENTER, keep_next=True, before=6, first=0, left=0)
+        p.add_run().add_picture(str(img), width=Emu(int(tw * 635)), height=Emu(int(th * 635)))
+        self._fig_caption(b["num"], title)
 
     def _fig_caption(self, num, title):
         p = self.doc.add_paragraph(style="Figure Caption")
@@ -1497,6 +1541,17 @@ def check_drafts(chapters: list[Chapter], reg: RefRegistry) -> list[str]:
             for nstr in nums:
                 if not re.search(label + r"\s*" + re.escape(nstr) + r"(?!\d)", body_txt):
                     out.append(f"{label} {nstr} ไม่ถูกอ้างถึงในเนื้อหา ({ch.path.name})")
+            # ควรอ้างถึงในเนื้อหาก่อน (หรือในย่อหน้าเดียวกับ) ตำแหน่งที่รูป/ตารางปรากฏ
+            if kind == "fig":
+                txt_before = ""
+                for b in ch.blocks:
+                    if b["t"] == "fig":
+                        if (re.search(label + r"\s*" + re.escape(b["num"]) + r"(?!\d)", body_txt)
+                                and not re.search(label + r"\s*" + re.escape(b["num"]) + r"(?!\d)", txt_before)):
+                            out.append(f"{label} {b['num']} ถูกอ้างถึงหลังจากรูปปรากฏแล้ว ควรอ้างก่อน "
+                                       f"({ch.path.name}:{b['line']})")
+                    elif b["t"] in ("p", "li", "licont"):
+                        txt_before += "\n" + b.get("text", "")
             # อ้างถึงรูป/ตารางที่ไม่มีอยู่จริง
             for mm in re.finditer(label + r"\s*(\d+\.\d+)", body_txt):
                 if mm.group(1).startswith(f"{ch.num}.") and mm.group(1) not in nums:
@@ -1687,6 +1742,8 @@ def drafts_version() -> str:
     for f in sorted(DRAFTS.glob("*.md")):
         h.update(f.name.encode())
         h.update(f.read_bytes())
+    if DRAFTS != ROOT / "thesis" / "drafts":
+        head = f"(ไม่ใช่ thesis/drafts — ใช้ร่างจาก {_rel(DRAFTS)})"
     s = f"commit ล่าสุดที่แก้ thesis/drafts: {head}; sha1 ของไฟล์ร่างทั้งหมด: {h.hexdigest()[:12]}"
     if dirty:
         s += "; มีไฟล์ร่างที่ยังไม่ commit: " + ", ".join(ln[3:] for ln in dirty.splitlines())
@@ -1715,7 +1772,30 @@ def font_env(tmpdir: Path) -> str:
     return "ไม่มี TH SarabunPSK ในเครื่อง — PDF ใช้ Laksaman (TLWG, ขนาดเท่ากัน) แทน"
 
 
+def parse_args(argv=None):
+    """--drafts DIR / --out DIR (ค่าเริ่มต้น thesis/drafts และ thesis/build)"""
+    import argparse
+    global DRAFTS, BUILD, FIG_DIR, OUT_DOCX, OUT_PDF, OUT_LOG
+    ap = argparse.ArgumentParser(description="สร้างเล่มโครงงานจากร่าง Markdown")
+    ap.add_argument("--drafts", type=Path, default=DRAFTS, help="โฟลเดอร์ร่าง (ค่าเริ่มต้น thesis/drafts)")
+    ap.add_argument("--out", type=Path, default=BUILD, help="โฟลเดอร์ผลลัพธ์ (ค่าเริ่มต้น thesis/build)")
+    a = ap.parse_args(argv)
+    DRAFTS, BUILD = a.drafts.resolve(), a.out.resolve()
+    FIG_DIR = BUILD / "figures"
+    OUT_DOCX = BUILD / "เล่มโครงงาน.docx"
+    OUT_PDF = BUILD / "เล่มโครงงาน.pdf"
+    OUT_LOG = BUILD / "build-log.txt"
+
+
+def _rel(p: Path) -> str:
+    try:
+        return str(p.relative_to(ROOT))
+    except ValueError:
+        return str(p)
+
+
 def main():
+    parse_args()
     BUILD.mkdir(parents=True, exist_ok=True)
     tmpdir = Path(tempfile.mkdtemp(prefix="thesis-"))
     font_note = font_env(tmpdir)
@@ -1782,7 +1862,7 @@ def main():
     rep += ["", f"== รายการ [รอใส่] ({len(todos)}) =="] + todos
     OUT_LOG.write_text("\n".join(rep) + "\n", encoding="utf-8")
     print("\n".join(rep[:6]))
-    print(f"เขียน {OUT_DOCX.relative_to(ROOT)}, {OUT_PDF.relative_to(ROOT)}, {OUT_LOG.relative_to(ROOT)}")
+    print(f"เขียน {_rel(OUT_DOCX)}, {_rel(OUT_PDF)}, {_rel(OUT_LOG)}")
     shutil.rmtree(tmpdir, ignore_errors=True)
 
 
