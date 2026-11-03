@@ -10,7 +10,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const JSZIP = (() => { try { return require.resolve('jszip/dist/jszip.min.js', { paths: [path.dirname(require.resolve('playwright')), '/opt/node-tools/node_modules'] }); } catch (e) { return null; } })();
 const BASE = 'https://dash.test/';
 
-async function run({ results, OUT, EXP, statsOf }) {
+async function run({ results, OUT, EXP, statsOf, botSamples }) {
   const SHOTS = process.env.SHOT_DIR || path.join(OUT, 'shots');
   fs.mkdirSync(SHOTS, { recursive: true });
   const books = JSON.parse(fs.readFileSync(path.join(OUT, 'books.json'), 'utf8'));
@@ -127,6 +127,15 @@ async function run({ results, OUT, EXP, statsOf }) {
     });
     await check('คดีที่ยังไม่รับผล (เมนูระยะเวลา) = Stats.pendingCases', `${EXP.pending.total} คดี`, async () => {
       await go(p, '#time'); eq(num(await p.textContent('[data-flash="t_w"]')), EXP.pending.total, 'คดีค้าง');
+    });
+    await check('คดีค้างแยก 2 กลุ่มบน Dashboard = ข้อความ LINE bot', `กำลังดำเนินการ ${EXP.pending.byStatus['กำลังดำเนินการ']} · รอรับผล ${EXP.pending.byStatus['เสร็จแล้ว รอรับผล']}`, async () => {
+      await go(p, '#time');
+      const sub = await p.evaluate(() => document.querySelector('[data-flash="t_w"]').parentElement.textContent);
+      const m = sub.match(/กำลังดำเนินการ\s*([\d,]+)\s*·\s*รอรับผล\s*([\d,]+)/); if (!m) throw new Error('ไม่พบข้อความแยกกลุ่ม: ' + sub);
+      eq(num(m[1]), EXP.pending.byStatus['กำลังดำเนินการ'], 'กำลังดำเนินการ'); eq(num(m[2]), EXP.pending.byStatus['เสร็จแล้ว รอรับผล'], 'รอรับผล');
+      const bot = (botSamples && botSamples.pending) || '';
+      if (!bot.includes('1) กำลังดำเนินการ: ' + m[1] + ' คดี') || !bot.includes('2) เสร็จแล้ว รอรับผล: ' + m[2] + ' คดี')) throw new Error('ข้อความบอตไม่ตรง Dashboard');
+      return `Dashboard ${m[1]} / ${m[2]} = บอต`;
     });
 
     // ดูไฟล์ Excel ในเครื่อง (JSZip โหลดเมื่อเลือกไฟล์)

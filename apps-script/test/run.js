@@ -160,21 +160,326 @@ test('Stats', 'ฟังก์ชันใน Stats เรียกจากห�
   for (const k of ['summarize', 'findCase', 'pendingCases', 'parseCases']) assert.strictEqual(typeof g0[k], 'undefined');
 });
 
+// ---------- 4) LINE bot (LineBot.gs + Intent.gs) — UrlFetchApp เป็น mock ไม่มีการเรียก LINE/Gemini จริง ----------
+const TOKEN = 'mock-webhook-token-0123456789abcdef0123';
+const GROUP = 'Cmockgroup0000000000000000000000001';
+const OWNER = 'owner@example.com';
+const BOTP = { LINE_CHANNEL_TOKEN: 'mock-line-channel-token', WEBHOOK_TOKEN: TOKEN, ALLOWED_GROUP_ID: GROUP,
+  GEMINI_API_KEY: 'mock-gemini-key', ADMIN_EMAIL: OWNER, DASHBOARD_URL: 'https://script.google.com/macros/s/MOCK-DEPLOYMENT/exec' };
+const LINE_HOST = 'https://api.line.me/', GEM_HOST = 'https://generativelanguage.googleapis.com/';
+const okGem = intent => () => ({ code: 200, body: { candidates: [{ content: { parts: [{ text: JSON.stringify(intent) }] } }] } });
+// บอตทำงานในรายการ Deploy "Execute as: Me" → effective user = เจ้าของ, active user = ว่าง (LINE ไม่มีบัญชี Google)
+function bot(o = {}) {
+  return load({ sheets: o.sheets || sheets, email: o.email || '', effectiveEmail: OWNER, props: Object.assign({}, BOTP, o.props || {}),
+    fetch: (url, p) => {
+      if (url.startsWith(LINE_HOST)) return { code: o.lineCode ? o.lineCode(url) : 200, body: {} };
+      if (url.startsWith(GEM_HOST)) return o.gemini ? o.gemini(url, p) : { code: 500, body: {} };
+      throw new Error('mock: ไม่อนุญาตให้เรียก ' + url);
+    } });
+}
+let evSeq = 0;
+function mkEvent(text, o = {}) {
+  evSeq++;
+  return Object.assign({ type: 'message', mode: 'active', timestamp: Date.now(), webhookEventId: 'mock-ev-' + evSeq,
+    deliveryContext: { isRedelivery: false }, source: { type: 'group', groupId: GROUP, userId: 'Umockuser0001' },
+    replyToken: 'mock-reply-token-' + evSeq,
+    message: Object.assign({ type: 'text', id: String(evSeq), quoteToken: 'q', text }, o.mention ? { mention: o.mention } : {}) }, o.ev || {});
+}
+function post(g, events, o = {}) {
+  const before = g.__state.fetches.length;
+  const e = { parameter: o.token === null ? {} : { token: o.token === undefined ? TOKEN : o.token }, contentLength: 1,
+    postData: { contents: JSON.stringify({ destination: 'Umockbotuserid', events: Array.isArray(events) ? events : [events] }), type: 'application/json' } };
+  const out = g.doPost(e);
+  const f = g.__state.fetches.slice(before);
+  const replies = f.filter(x => x.url === LINE_HOST + 'v2/bot/message/reply').map(x => JSON.parse(x.params.payload));
+  return { out: out.getContent(), fetches: f, replies, texts: replies.map(r => r.messages[0].text), gem: f.filter(x => x.url.startsWith(GEM_HOST)) };
+}
+const say = (g, text, o) => post(g, mkEvent(text, o), o);
+const th = s => s.replace(/\d/g, d => String.fromCharCode(0x0E50 + +d));
+const LK = EXP.lookup;
+const thaiD = ymd => { const M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']; const p = ymd.split('-'); return `${+p[2]} ${M[+p[1] - 1]} ${+p[0] + 543}`; };
+const OFFICER_NAMES = ['เจ้าหน้าที่ ก', 'เจ้าหน้าที่ ข', 'เจ้าหน้าที่ ค', 'เจ้าหน้าที่ ง', 'เจ้าหน้าที่ จ'];
+const caseRow = sheets.cases['ข้อมูลคดี'].find(r => r[0] === LK.bk);
+const caseHead = sheets.cases['ข้อมูลคดี'][0];
+
+test('LINE bot', `เลข บก. ${LK.bk} จากกลุ่มที่อนุญาต`, 'ตอบ 1 ครั้ง: สถานะ ประเภท ของกลาง วันที่รับ/เสร็จ/มารับผล · ไม่มีชื่อผู้ตรวจ สภ. เลขรายงาน · ไม่เรียก Gemini', () => {
+  const g = bot(); const r = say(g, LK.bk);
+  assert.strictEqual(r.out, 'OK'); assert.strictEqual(r.replies.length, 1); assert.strictEqual(r.gem.length, 0);
+  const t = r.texts[0];
+  assert.ok(t.includes('คดี ' + LK.bk) && t.includes('สถานะ: ' + LK.status) && t.includes('วันที่รับ: ' + thaiD(LK.recvYmd)), t);
+  assert.ok(t.includes('ประเภทคดี:') && t.includes('ของกลาง:') && t.includes('ตรวจเสร็จ:') && t.includes('มารับผล:'));
+  for (const bad of [...OFFICER_NAMES, 'สภ.', caseRow[caseHead.indexOf('เลขรายงาน')], caseRow[caseHead.indexOf('จังหวัด')]]) assert.ok(!t.includes(bad), 'มี ' + bad);
+  assert.strictEqual(r.replies[0].replyToken.startsWith('mock-reply-token-'), true);
+  assert.strictEqual(r.fetches[0].params.headers.Authorization, 'Bearer mock-line-channel-token');
+  return t.replace(/\n/g, ' / ');
+});
+test('LINE bot', 'เลข บก. แบบเลขไทย "คดี ' + th(LK.bk) + ' ถึงไหนแล้ว"', 'ตอบเหมือนเลขอารบิก', () => {
+  const a = say(bot(), LK.bk).texts[0], b = say(bot(), 'คดี ' + th(LK.bk) + ' ถึงไหนแล้ว').texts[0];
+  assert.strictEqual(b, a);
+});
+test('LINE bot', 'เลข บก. ที่ไม่มีในข้อมูล (9999/2569)', 'ตอบ "ไม่พบคดี 9999/2569"', () => {
+  const r = say(bot(), '9999/2569'); assert.strictEqual(r.replies.length, 1); assert.ok(r.texts[0].startsWith('ไม่พบคดี 9999/2569')); assert.strictEqual(r.gem.length, 0);
+  return r.texts[0].replace(/\n/g, ' / ');
+});
+test('LINE bot', 'หลายเลขในข้อความเดียว "บอต 1/2565, 2/2565"', 'ตอบทั้ง 2 คดีในข้อความเดียว', () => {
+  const t = say(bot(), 'บอต 1/2565, 2/2565').texts[0]; assert.ok(t.includes('คดี 1/2565') && t.includes('คดี 2/2565'));
+});
+let pendingSample = '';
+test('LINE bot', 'คำสั่ง "คดีค้าง"', `แยก กำลังดำเนินการ ${EXP.pending.byStatus['กำลังดำเนินการ']} / เสร็จแล้ว รอรับผล ${EXP.pending.byStatus['เสร็จแล้ว รอรับผล']} + 3 คดีค้างนานสุดต่อกลุ่ม (Python)`, () => {
+  const g = bot(); const r = say(g, 'คดีค้าง'); assert.strictEqual(r.replies.length, 1); assert.strictEqual(r.gem.length, 0);
+  const t = r.texts[0]; pendingSample = t;
+  const off = g.Stats.ymdToDays(g.Stats.todayYmd(new Date())) - g.Stats.ymdToDays(EXP.pending.today);   // วันนี้จริง vs วันอ้างอิงของ Python
+  assert.ok(t.includes('คดีค้าง (ยังไม่รับผล) ' + EXP.pending.total + ' คดี'));
+  assert.ok(t.includes('1) กำลังดำเนินการ: ' + EXP.pending.byStatus['กำลังดำเนินการ'] + ' คดี'));
+  assert.ok(t.includes('2) เสร็จแล้ว รอรับผล: ' + EXP.pending.byStatus['เสร็จแล้ว รอรับผล'] + ' คดี'));
+  const fmt = arr => arr.map(([bk, d]) => `${bk} (${(d + off).toLocaleString('en-US')} วัน)`).join(', ');
+  assert.ok(t.includes(fmt(EXP.pending.top3Progress)), 'top3 กำลังดำเนินการ'); assert.ok(t.includes(fmt(EXP.pending.top3Waiting)), 'top3 รอรับผล');
+  for (const n of OFFICER_NAMES) assert.ok(!t.includes(n));
+  return t.length + ' ตัวอักษร ตรงกับ Python ทุกค่า';
+});
+test('LINE bot', 'คำสั่งคดีค้างแบบอื่น ("มีคดีค้างกี่คดี", "บอต งานที่ยังไม่รับผล", "/ค้าง")', 'ตอบสรุปคดีค้าง ไม่เรียก Gemini', () => {
+  for (const q of ['มีคดีค้างกี่คดี', 'บอต งานที่ยังไม่รับผล', '/ค้าง', 'สรุปคดีค้าง?']) { const r = say(bot(), q); assert.ok(r.texts[0] && r.texts[0].startsWith('คดีค้าง'), q); assert.strictEqual(r.gem.length, 0, q); }
+});
+test('LINE bot', 'mention บอต (@DNA Bot คดีค้าง)', 'ถือว่าเรียกบอต ตอบสรุปคดีค้าง', () => {
+  const r = say(bot(), '@DNA Bot ขอดูคดีค้าง', { mention: { mentionees: [{ index: 0, length: 8, type: 'user', userId: 'Umockbotuserid', isSelf: true }] } });
+  assert.ok(r.texts[0].startsWith('คดีค้าง'));
+});
+const CHAT = ['สวัสดีครับ', 'บอทนี่ใช้ดีนะ', 'ส่งของกลางคดี 123/2568 ไปแล้วนะ', 'พรุ่งนี้ประชุม 9 โมง', 'งานค้างเยอะจัง', 'ใครเห็นคดี 45/2569 บ้าง', 'โอเค', 'บอตตอง', '5555'];
+test('LINE bot', 'แชตปกติที่ไม่ได้เรียกบอต (' + CHAT.length + ' ข้อความ รวมที่มีเลขคดีปนในประโยค)', 'เงียบ: ไม่ reply ไม่เรียก Gemini ไม่มีคำขอออกไปเลย', () => {
+  const g = bot();
+  for (const q of CHAT) { const r = say(g, q); assert.strictEqual(r.fetches.length, 0, q); assert.strictEqual(r.out, 'OK'); }
+  const r = say(g, '@สมชาย ช่วยดู 12/2568 หน่อย', { mention: { mentionees: [{ index: 0, length: 6, type: 'user', userId: 'Uother', isSelf: false }] } });
+  assert.strictEqual(r.fetches.length, 0, 'mention คนอื่น');
+  const s = say(g, 'ส่งรูปมา', { ev: { message: { type: 'image', id: 'x' } } }); assert.strictEqual(s.fetches.length, 0, 'รูปภาพ');
+  return CHAT.join(' | ') + ' | mention คนอื่น | รูปภาพ → ไม่มีคำขอ';
+});
+test('LINE bot', 'กลุ่มอื่น / แชตส่วนตัว / ห้องแชต', 'เงียบ ไม่ตอบ', () => {
+  const g = bot();
+  for (const source of [{ type: 'group', groupId: 'Cothergroup', userId: 'U1' }, { type: 'user', userId: 'U1' }, { type: 'room', roomId: 'R1', userId: 'U1' }]) {
+    const r = say(g, LK.bk, { ev: { source } }); assert.strictEqual(r.fetches.length, 0, source.type);
+  }
+});
+test('LINE bot', 'ยังไม่ตั้ง ALLOWED_GROUP_ID', 'เงียบทุกกลุ่ม (fail closed)', () => {
+  const r = say(bot({ props: { ALLOWED_GROUP_ID: null } }), LK.bk); assert.strictEqual(r.fetches.length, 0);
+});
+test('LINE bot', 'token ใน URL ผิด / ไม่มี / ยังไม่ตั้ง WEBHOOK_TOKEN / token สั้นเกิน', 'ทิ้งคำขอ ไม่ตอบ ไม่อ่านชีต คำตอบ HTTP "OK" เหมือนกรณีปกติ', () => {
+  const cases = [[{ token: 'wrong' }, {}], [{ token: TOKEN.slice(0, -1) }, {}], [{ token: null }, {}], [{}, { WEBHOOK_TOKEN: null }], [{ token: 'short' }, { WEBHOOK_TOKEN: 'short' }]];
+  for (const [o, props] of cases) {
+    const g = bot({ props }); const opens = g.__state.opens; const r = say(g, LK.bk, o);
+    assert.strictEqual(r.fetches.length, 0); assert.strictEqual(r.out, 'OK'); assert.strictEqual(g.__state.opens, opens);
+  }
+});
+test('LINE bot', 'ปุ่ม Verify ของ LINE (events ว่าง) / body ไม่ใช่ JSON', 'ตอบ "OK" ไม่มีคำขอออก', () => {
+  const g = bot(); assert.strictEqual(post(g, []).fetches.length, 0);
+  const out = g.doPost({ parameter: { token: TOKEN }, postData: { contents: 'not json' } }); assert.strictEqual(out.getContent(), 'OK');
+  assert.strictEqual(g.__state.fetches.length, 0);
+});
+test('LINE bot', 'event ซ้ำ (webhookEventId เดิม) / redelivery / event เก่า 10 นาที', 'ตอบครั้งเดียว · ไม่ตอบ redelivery และ event เก่า', () => {
+  const g = bot(); const ev = mkEvent(LK.bk);
+  assert.strictEqual(post(g, ev).replies.length, 1); assert.strictEqual(post(g, ev).replies.length, 0);
+  assert.strictEqual(say(g, LK.bk, { ev: { deliveryContext: { isRedelivery: true } } }).replies.length, 0);
+  assert.strictEqual(say(g, LK.bk, { ev: { timestamp: Date.now() - 600000 } }).replies.length, 0);
+});
+test('LINE bot', '"บอต" เฉย ๆ / "บอต วิธีใช้"', 'ตอบวิธีใช้ ไม่เรียก Gemini', () => {
+  for (const q of ['บอต', 'บอต วิธีใช้', 'bot help']) { const r = say(bot(), q); assert.ok(r.texts[0].startsWith('วิธีใช้บอต'), q); assert.strictEqual(r.gem.length, 0); }
+});
+const AIQ = 'บอต ช่วยดูหน่อยว่าตอนนี้มีอะไรติดอยู่บ้าง นายสมชาย ใจดี โทร 081-234-5678 อีเมล somchai@example.org เลขรายงาน 03-68-00012 สภ.ตัวอย่าง3 เรื่องเลข 12/68 https://example.org/x';
+let aiPayload = '';
+test('LINE bot', 'เรียกบอตแต่กฎไม่เข้าใจ → Gemini (mock)', 'ส่งเฉพาะข้อความที่ตัดตัวเลข/ชื่อ/อีเมล/URL/สภ. แล้ว ไม่มีข้อมูลจาก Sheet · ได้ intent แล้วตอบด้วยโค้ด', () => {
+  const g = bot({ gemini: okGem({ intent: 'pending_summary', caseNo: '999/2568' }) }); const r = say(g, AIQ);
+  assert.strictEqual(r.gem.length, 1); const req = r.gem[0];
+  assert.ok(req.url.endsWith('/models/gemini-3.5-flash-lite:generateContent')); assert.strictEqual(req.params.headers['x-goog-api-key'], 'mock-gemini-key');
+  assert.ok(!req.url.includes('mock-gemini-key'));
+  const body = req.params.payload, sent = JSON.parse(body).contents[0].parts[0].text; aiPayload = sent;
+  const sys = JSON.parse(body).systemInstruction.parts[0].text;
+  assert.ok(!/[0-9๐-๙]/.test(sent) && !/[0-9๐-๙]/.test(sys), 'มีตัวเลขในข้อความ');
+  for (const bad of ['สมชาย', 'ใจดี', 'somchai', '@', 'example.org', 'สภ.', 'ตัวอย่าง3', GROUP, 'Umockuser0001', 'mock-reply', 'https']) assert.ok(!body.includes(bad), 'มี ' + bad);
+  const sheetVals = new Set(); for (const row of sheets.cases['ข้อมูลคดี'].slice(1)) for (const v of row) if (typeof v === 'string' && v.length >= 3) sheetVals.add(v);
+  for (const v of sheetVals) assert.ok(!body.includes(v), 'มีค่าจาก Sheet: ' + v);
+  assert.ok(r.texts[0].startsWith('คดีค้าง')); assert.ok(!r.texts[0].includes('999/2568'), 'ใช้ caseNo จาก Gemini');
+  return 'ข้อความที่ส่ง: "' + sent + '"';
+});
+test('LINE bot', 'Gemini ตอบ case_status พร้อม caseNo ' + LK.bk, 'ไม่ใช้เลขจาก Gemini → ขอให้พิมพ์เลข บก. (ไม่ค้นชีต)', () => {
+  const g = bot({ gemini: okGem({ intent: 'case_status', caseNo: LK.bk }) }); const opens = g.__state.opens;
+  const r = say(g, 'บอต อยากรู้ว่าเรื่องของฉันถึงไหน'); assert.ok(r.texts[0].startsWith('พิมพ์เลข บก.')); assert.strictEqual(g.__state.opens, opens);
+});
+test('LINE bot', 'Gemini ล่ม: HTTP 429 / 500 / timeout (exception) / JSON เสีย / intent แปลก', 'ตอบวิธีใช้สั้น ๆ ทุกกรณี', () => {
+  const fails = [() => ({ code: 429, body: { error: { status: 'RESOURCE_EXHAUSTED' } } }), () => ({ code: 500, body: {} }), () => new Error('Timeout: request timed out'),
+    () => ({ code: 200, body: { candidates: [{ content: { parts: [{ text: '{oops' }] } }] } }), okGem({ intent: 'delete_everything' })];
+  for (const f of fails) { const r = say(bot({ gemini: f }), 'บอต ขอข้อมูลหน่อย'); assert.strictEqual(r.gem.length, 1); assert.ok(r.texts[0].startsWith('วิธีใช้บอต'), r.texts[0]); }
+});
+test('LINE bot', 'ไม่มี GEMINI_API_KEY / เกินโควตาที่ตั้ง (GEMINI_MAX_PER_HOUR=1) / GEMINI_MODEL แปลก', 'ไม่เรียก Gemini ตอบวิธีใช้', () => {
+  assert.strictEqual(say(bot({ props: { GEMINI_API_KEY: null } }), 'บอต ขอข้อมูลหน่อย').gem.length, 0);
+  const g = bot({ props: { GEMINI_MAX_PER_HOUR: '1' }, gemini: okGem({ intent: 'help' }) });
+  assert.strictEqual(say(g, 'บอต ขอข้อมูลหน่อย').gem.length, 1); const r2 = say(g, 'บอต ขอข้อมูลอีกที'); assert.strictEqual(r2.gem.length, 0); assert.ok(r2.texts[0].startsWith('วิธีใช้'));
+  assert.strictEqual(say(bot({ props: { GEMINI_MODEL: '../../evil?x=' }, gemini: okGem({ intent: 'help' }) }), 'บอต ขอข้อมูลหน่อย').gem.length, 0);
+});
+test('LINE bot', 'โหมดตั้งค่า: เชิญบอตเข้ากลุ่มใหม่', 'บันทึก groupId ใน Script Properties ไม่ตอบในแชต · allowSeenGroup ตั้ง ALLOWED_GROUP_ID แล้วปิดโหมด', () => {
+  const g = bot({ email: OWNER, props: { ALLOWED_GROUP_ID: null } });
+  g.startSetupMode();
+  const r = post(g, { type: 'join', timestamp: Date.now(), webhookEventId: 'j1', source: { type: 'group', groupId: 'Cnewgroup123' }, replyToken: 'rt' });
+  assert.strictEqual(r.fetches.length, 0);
+  assert.strictEqual(say(g, 'ทดสอบ', { ev: { source: { type: 'group', groupId: 'Cnewgroup123', userId: 'U1' } } }).fetches.length, 0);
+  assert.ok(g.showSetupGroups().includes('Cnewgroup123'));
+  g.allowSeenGroup(); assert.strictEqual(g.__state.props.ALLOWED_GROUP_ID, 'Cnewgroup123'); assert.ok(!('SETUP_UNTIL' in g.__state.props));
+  assert.strictEqual(say(g, LK.bk, { ev: { source: { type: 'group', groupId: 'Cnewgroup123', userId: 'U1' } } }).replies.length, 1);
+});
+test('LINE bot', 'โหมดตั้งค่าหมดเวลา / ไม่ได้เปิด', 'ไม่บันทึก groupId', () => {
+  const g = bot({ email: OWNER, props: { ALLOWED_GROUP_ID: null, SETUP_UNTIL: String(Date.now() - 1000) } });
+  post(g, { type: 'join', timestamp: Date.now(), webhookEventId: 'j2', source: { type: 'group', groupId: 'Cx' } });
+  assert.ok(!('SETUP_SEEN_GROUPS' in g.__state.props));
+});
+test('LINE bot', 'ฟังก์ชันผู้ดูแลเรียกโดยผู้ใช้ Dashboard ที่ไม่ใช่ ADMIN_EMAIL', 'โยน Error ทุกฟังก์ชัน', () => {
+  const g = load({ sheets, email: ALLOWED, props: BOTP, fetch: () => { throw new Error('no'); } });
+  for (const f of ['startSetupMode', 'showSetupGroups', 'allowSeenGroup', 'makeWebhookToken', 'installTriggers', 'removeTriggers', 'previewSummary', 'previewYearSummary'])
+    assert.ok(throwsMsg(() => g[f]()).includes('ADMIN_EMAIL'), f);
+  const g2 = load({ sheets, email: OWNER, props: Object.assign({}, BOTP, { ADMIN_EMAIL: null }) }); assert.ok(throwsMsg(() => g2.installTriggers()).includes('ADMIN_EMAIL'));
+});
+test('LINE bot', 'makeWebhookToken', 'สร้าง token สุ่ม 64 ตัว ไม่พิมพ์ค่าใน log · รันซ้ำไม่เปลี่ยน', () => {
+  const g = load({ sheets, email: OWNER, props: Object.assign({}, BOTP, { WEBHOOK_TOKEN: null }) });
+  assert.strictEqual(g.makeWebhookToken(), 'created'); const t = g.__state.props.WEBHOOK_TOKEN; assert.strictEqual(t.length, 64);
+  assert.ok(!g.__state.logs.join('\n').includes(t)); assert.strictEqual(g.makeWebhookToken(), 'exists'); assert.strictEqual(g.__state.props.WEBHOOK_TOKEN, t);
+});
+
+// ---------- 5) รายการ Deploy ของบอต (Execute as Me) ต้องไม่รั่วข้อมูล Dashboard ----------
+test('Deploy บอต', 'เปิดลิงก์บอตแบบไม่ล็อกอิน (Execute as Me, active user ว่าง)', 'doGet = หน้าไม่มีสิทธิ์ · getBook/getSources/checkSetup โยน Error', () => {
+  const g = load({ sheets, email: '', effectiveEmail: OWNER }); assert.ok(g.doGet().getContent().includes('ไม่มีสิทธิ์เข้าถึง'));
+  for (const f of [() => g.getBook('cases'), () => g.getBook('lab'), () => g.getSources(), () => g.checkSetup()]) assert.ok(throwsMsg(f).includes('ไม่มีสิทธิ์'));
+});
+test('Deploy บอต', 'ผู้ใช้ในรายชื่อ ผู้ใช้ เปิดลิงก์บอต (Workspace โดเมนเดียวกัน: Google ส่งอีเมลมา แต่สคริปต์ทำงานในนามเจ้าของ)', 'ปฏิเสธ (effective ≠ active) ไม่อ่านชีตข้อมูล', () => {
+  const g = load({ sheets, email: ALLOWED, effectiveEmail: OWNER }); const h = g.doGet().getContent();
+  assert.ok(h.includes('ไม่ใช่ลิงก์ Dashboard')); assert.ok(throwsMsg(() => g.getBook('cases')).includes('ไม่มีสิทธิ์')); assert.strictEqual(g.__state.opens, 0);
+});
+test('Deploy บอต', 'doPost ตอบเฉพาะ "OK" ไม่มีข้อมูลคดีในคำตอบ HTTP', 'เนื้อหาคำตอบ = "OK" ทุกกรณี', () => {
+  const g = bot(); for (const q of [LK.bk, 'คดีค้าง', 'สวัสดี']) assert.strictEqual(say(g, q).out, 'OK');
+});
+test('อ่านข้อมูล', 'ชีตจริงที่ยังไม่ลบคอลัมน์ User ID (LINE)', 'getBook และคำตอบบอตไม่มีคอลัมน์/ค่านี้ (ระบบไม่พึ่งคอลัมน์นี้)', () => {
+  const s2 = JSON.parse(JSON.stringify(sheets)); const t = s2.cases['ข้อมูลคดี'];
+  t.forEach((r, i) => r.splice(5, 0, i === 0 ? 'User ID (LINE)' : 'U-mock-' + String(i % 25).padStart(3, '0')));
+  const b = load({ sheets: s2, email: ALLOWED }).__call('getBook', 'cases'); const js = JSON.stringify(b);
+  assert.ok(!js.includes('User ID') && !js.includes('U-mock-'));
+  const r = say(bot({ sheets: s2 }), LK.bk); assert.ok(!r.texts[0].includes('U-mock-'));
+  assert.ok(!sheets.cases['ข้อมูลคดี'][0].includes('User ID (LINE)'), 'ข้อมูลจำลองต้องไม่มีคอลัมน์นี้แล้ว');
+});
+
+// ---------- 6) สถานะว่าง: นับเหมือน Dashboard ----------
+test('Stats', 'แถวที่ช่องสถานะว่าง / สะกดอื่น', 'นับเป็น "กำลังดำเนินการ" เหมือน Dashboard (statusOf) และบอกจำนวนสถานะว่าง', () => {
+  const recs = plain(records); recs[0].status = ''; recs[1].status = 'รอรับผล'; recs[2].status = 'ส่งต่อ';
+  const base = S.pendingByStatus(records, {}), p = S.pendingByStatus(recs, {});
+  const g0s = [records[0], records[1], records[2]].map(c => S.statusGroup(c.status));
+  const dp = g0s.filter(x => x === 'กำลังดำเนินการ').length, dw = g0s.filter(x => x === 'เสร็จแล้ว รอรับผล').length;
+  assert.strictEqual(p.inProgress.count, base.inProgress.count - dp + 2); assert.strictEqual(p.waiting.count, base.waiting.count - dw + 1);
+  assert.strictEqual(p.inProgress.blankStatus, 1);
+  assert.deepStrictEqual(['รับผลไปแล้ว', 'เสร็จแล้ว รอรับผล', 'เสร็จแล้ว  รอรับผล ', '', 'กำลังดำเนินการ', 'อื่น ๆ'].map(S.statusGroup),
+    ['รับผลไปแล้ว', 'เสร็จแล้ว รอรับผล', 'เสร็จแล้ว รอรับผล', 'กำลังดำเนินการ', 'กำลังดำเนินการ', 'กำลังดำเนินการ']);
+});
+
+// ---------- 7) สรุปอัตโนมัติ (Summary.gs) ----------
+/** แปลงข้อความสรุปกลับเป็นตัวเลข เพื่อเทียบกับ Python */
+function parseSummary(t) {
+  const L = t.split('\n'); const num = s => +s.replace(/,/g, '');
+  const out = { cases: num((t.match(/คดีทั้งหมด ([\d,]+) คดี/) || [])[1] || '0'), evidence: num((t.match(/ของกลางรวม ([\d,]+) ชิ้น/) || [])[1] || '0'), byType: {}, byOfficer: {} };
+  let sec = '';
+  for (const l of L) {
+    if (l === 'แยกตามประเภทคดี') { sec = 't'; continue; } if (l.startsWith('แยกตามผู้ตรวจ')) { sec = 'o'; continue; } if (!l.startsWith('- ')) { if (!l) sec = sec && ''; continue; }
+    if (sec === 't') { const m = l.match(/^- (.+) ([\d,]+)$/); out.byType[m[1]] = num(m[2]); }
+    if (sec === 'o') { const m = l.match(/^- (.+?) ([\d,]+): (.+)$/); const name = m[1] === 'ไม่ระบุผู้ตรวจ' ? 'ไม่ระบุ' : m[1];
+      out.byOfficer[name] = { cases: num(m[2]), types: Object.fromEntries(m[3].split(', ').map(x => { const k = x.match(/^(.+) (\d+)$/); return [k[1], +k[2]]; })) }; }
+  }
+  return out;
+}
+const sumBot = (o = {}) => bot(Object.assign({ email: OWNER }, o));
+const SUMMARY_SAMPLES = {};
+for (const [k, label, call] of [['2026-10', 'เดือน ต.ค. 2569', g => g.previewSummary(2569, 10)], ['2025', 'ปี 2568', g => g.previewYearSummary(2568)]]) {
+  test('สรุปอัตโนมัติ', 'ข้อความสรุป ' + label + ' (previewSummary/previewYearSummary)', `ตัวเลขทุกค่าตรงกับ Python และ Stats.summarize ที่หน้า Dashboard ใช้ · ไม่ส่งจริง`, () => {
+    const g = sumBot(); const t = call(g); SUMMARY_SAMPLES[k] = t;
+    assert.strictEqual(g.__state.fetches.length, 0, 'preview ต้องไม่ส่ง');
+    const p = parseSummary(t), e = EXP.ranges[k];
+    assert.deepStrictEqual({ cases: p.cases, evidence: p.evidence, byType: p.byType, byOfficer: p.byOfficer }, { cases: e.cases, evidence: e.evidence, byType: e.byType, byOfficer: e.byOfficer });
+    assert.strictEqual(p.cases, statsOf[k].cases); assert.strictEqual(p.evidence, statsOf[k].evidence);
+    assert.ok(t.includes(BOTP.DASHBOARD_URL)); assert.ok(!/\d+\/25\d\d/.test(t), 'มีเลขคดี'); assert.ok(!t.includes('สภ.'));
+    return `คดี ${p.cases}, ของกลาง ${p.evidence}, ${Object.keys(p.byType).length} ประเภท, ${Object.keys(p.byOfficer).length} ผู้ตรวจ · ${t.length} ตัวอักษร`;
+  });
+}
+test('สรุปอัตโนมัติ', 'installTriggers() รัน 3 ครั้ง', 'มี trigger รายวัน 1 ตัว (08:00 Asia/Bangkok) ไม่สร้างซ้ำ', () => {
+  const g = sumBot(); g.installTriggers(); g.installTriggers(); g.installTriggers();
+  assert.strictEqual(g.__state.triggers.length, 1); const s = g.__state.triggers[0].spec;
+  assert.deepStrictEqual([s.fn, s.everyDays, s.atHour, s.tz], ['dailySummaryJob', 1, 8, 'Asia/Bangkok']);
+  g.removeTriggers(); assert.strictEqual(g.__state.triggers.length, 0);
+});
+function trigBot(o = {}) { const g = sumBot(Object.assign({ props: { PUSH_ENABLED: 'yes' } }, o)); g.installTriggers(); g.__ev = { triggerUid: g.__state.triggers[0].getUniqueId() }; return g; }
+const pushesOf = (g, from = 0) => g.__state.fetches.slice(from).filter(x => x.url === LINE_HOST + 'v2/bot/message/push');
+test('สรุปอัตโนมัติ', 'เรียก dailySummaryJob โดยไม่ผ่าน trigger (เช่นผู้ใช้ Dashboard เรียกผ่าน google.script.run)', 'ปฏิเสธ ไม่ส่ง', () => {
+  const g = trigBot(); assert.strictEqual(g.dailySummaryJob(undefined, bkk('2026-11-01T08:10:00')), 'refused-not-trigger');
+  assert.strictEqual(g.dailySummaryJob({ triggerUid: 'fake' }, bkk('2026-11-01T08:10:00')), 'refused-not-trigger'); assert.strictEqual(pushesOf(g).length, 0);
+});
+test('สรุปอัตโนมัติ', '1 พ.ย. 2569 08:10 (เวลาไทย)', 'push 1 ครั้ง 1 ข้อความ = สรุป ต.ค. 2569 ไปยัง ALLOWED_GROUP_ID พร้อม X-Line-Retry-Key', () => {
+  const g = trigBot(); const r = g.dailySummaryJob(g.__ev, bkk('2026-11-01T08:10:00')); const p = pushesOf(g);
+  assert.strictEqual(r, 'sent:2026-10'); assert.strictEqual(p.length, 1); const body = JSON.parse(p[0].params.payload);
+  assert.strictEqual(body.to, GROUP); assert.strictEqual(body.messages.length, 1); assert.strictEqual(body.messages[0].text, SUMMARY_SAMPLES['2026-10']);
+  assert.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/.test(p[0].params.headers['X-Line-Retry-Key']));
+  assert.strictEqual(g.__state.props.SUMMARY_SENT_MONTH, '2026-10'); return r;
+});
+test('สรุปอัตโนมัติ', 'กันส่งซ้ำ: trigger ทำงานซ้ำวันเดียวกัน / วันที่ 2–3 / วันที่ 15', 'ไม่ส่งซ้ำ (nothing-due)', () => {
+  const g = trigBot(); g.dailySummaryJob(g.__ev, bkk('2026-11-01T08:10:00'));
+  for (const t of ['2026-11-01T08:40:00', '2026-11-02T08:10:00', '2026-11-03T08:10:00', '2026-11-15T08:10:00']) assert.strictEqual(g.dailySummaryJob(g.__ev, bkk(t)), 'nothing-due', t);
+  assert.strictEqual(pushesOf(g).length, 1);
+});
+test('สรุปอัตโนมัติ', 'ยังไม่ตั้ง PUSH_ENABLED=yes (ก่อนเจ้าของอนุมัติ)', 'ไม่ส่ง แค่ log ตัวอย่าง และไม่บันทึกว่าส่งแล้ว', () => {
+  const g = trigBot({ props: {} }); const r = g.dailySummaryJob(g.__ev, bkk('2026-11-01T08:10:00'));
+  assert.strictEqual(r, 'preview-only:2026-10'); assert.strictEqual(g.__state.fetches.length, 0); assert.ok(!('SUMMARY_SENT_MONTH' in g.__state.props));
+});
+let janSample = null;
+test('สรุปอัตโนมัติ', '1 ม.ค. 2569 (2026-01-01) 08:10', 'push คำขอเดียว 2 ข้อความ: สรุป ธ.ค. 2568 + สรุปปี 2568 (ตรงกับ Python) · โควตานับ 1 รอบ', () => {
+  const g = trigBot(); const r = g.dailySummaryJob(g.__ev, bkk('2026-01-01T08:10:00')); const p = pushesOf(g);
+  assert.strictEqual(r, 'sent:2025-12+2025'); assert.strictEqual(p.length, 1); const m = JSON.parse(p[0].params.payload).messages;
+  assert.strictEqual(m.length, 2); assert.ok(m[0].text.startsWith('สรุปคดีส่งตรวจ DNA เดือน ธ.ค. 2568')); assert.ok(m[1].text.startsWith('สรุปคดีส่งตรวจ DNA ปี 2568'));
+  assert.strictEqual(m[1].text, SUMMARY_SAMPLES['2025']);
+  const y = parseSummary(m[1].text); assert.strictEqual(y.cases, EXP.ranges['2025'].cases); assert.strictEqual(y.evidence, EXP.ranges['2025'].evidence);
+  assert.strictEqual(g.__state.props.SUMMARY_SENT_MONTH, '2025-12'); assert.strictEqual(g.__state.props.SUMMARY_SENT_YEAR, '2025');
+  assert.strictEqual(g.dailySummaryJob(g.__ev, bkk('2026-01-01T09:00:00')), 'nothing-due'); janSample = m; return r;
+});
+test('สรุปอัตโนมัติ', 'LINE ล่ม (HTTP 500) วันที่ 1 → วันที่ 2 ส่งได้ / LINE ตอบ 409 (เคยรับ retry key นี้แล้ว)', 'วันที่ 1 ไม่บันทึก · วันที่ 2 ส่งงวดเดิม (retry key เดิม) · 409 ถือว่าส่งแล้ว ไม่ส่งซ้ำ', () => {
+  let code = 500; const g = trigBot({ lineCode: () => code });
+  assert.strictEqual(g.dailySummaryJob(g.__ev, bkk('2026-11-01T08:10:00')), 'push-failed:500'); assert.ok(!('SUMMARY_SENT_MONTH' in g.__state.props));
+  code = 200; assert.strictEqual(g.dailySummaryJob(g.__ev, bkk('2026-11-02T08:10:00')), 'sent:2026-10');
+  const k = pushesOf(g).map(x => x.params.headers['X-Line-Retry-Key']); assert.strictEqual(k[0], k[1]);
+  code = 409; const g2 = trigBot({ lineCode: () => code }); assert.ok(g2.dailySummaryJob(g2.__ev, bkk('2026-11-01T08:10:00')).startsWith('sent:2026-10'));
+  assert.strictEqual(g2.__state.props.SUMMARY_SENT_MONTH, '2026-10');
+  const g3 = trigBot({ lineCode: () => 500 }); for (const d of ['01', '02', '03']) g3.dailySummaryJob(g3.__ev, bkk('2026-11-' + d + 'T08:10:00'));
+  assert.strictEqual(g3.dailySummaryJob(g3.__ev, bkk('2026-11-04T08:10:00')), 'nothing-due', 'เลยวันที่ 3 ไม่ส่งย้อนหลัง');
+});
+test('สรุปอัตโนมัติ', 'ขนาดข้อความ (เพดาน LINE: text ≤ 5,000 ตัวอักษร, ≤ 5 ข้อความต่อคำขอ)', 'ทุกข้อความ < 2,000 ตัวอักษร รวมกรณีจำลองผู้ตรวจ 5 คน × 6 ประเภท ทุกคู่', () => {
+  const g = sumBot(); const lens = [];
+  for (const t of [SUMMARY_SAMPLES['2026-10'], SUMMARY_SAMPLES['2025'], ...janSample.map(x => x.text), pendingSample]) { assert.ok(t.length < 2000); lens.push(t.length); }
+  // กรณีหนักสุดที่คาด: ผู้ตรวจ 5 คน + ไม่ระบุ × 6 ประเภท + ไม่ระบุ ครบทุกคู่ (ชื่อยาวสมมติ)
+  const types = ['ทรัพย์', 'เพศ', 'ชีวิตและร่างกาย', 'พรบ.อาวุธปืน', 'ยาเสพติด', 'อื่น ๆ', 'ไม่ระบุ'];
+  const offs = ['นางสาวตัวอย่าง นามสกุลยาวมากสำหรับทดสอบ 1', 'นางสาวตัวอย่าง นามสกุลยาวมากสำหรับทดสอบ 2', 'นางสาวตัวอย่าง นามสกุลยาวมากสำหรับทดสอบ 3', 'นางสาวตัวอย่าง นามสกุลยาวมากสำหรับทดสอบ 4', 'นางสาวตัวอย่าง นามสกุลยาวมากสำหรับทดสอบ 5', 'ไม่ระบุ'];
+  const recs = []; let i = 0;
+  for (const o of offs) for (const t of types) for (let k = 0; k < 120; k++) recs.push({ bk: 'x', recvYmd: '2025-0' + (1 + (i++ % 9)) + '-15', status: 'รับผลไปแล้ว', type: t === 'ไม่ระบุ' ? '' : t, officer: o === 'ไม่ระบุ' ? '' : o, items: 9999, counted: true });
+  const big = g.formatSummary_(g.Stats.summarize(recs, g.Stats.yearRange(2025)), BOTP.DASHBOARD_URL); assert.ok(big.length < 2000, big.length);
+  return 'จริง: ' + lens.join(', ') + ' ตัวอักษร · กรณีหนักสุด (6×7 คู่, ตัวเลข 5 หลัก) ' + big.length + ' ตัวอักษร';
+});
+test('สรุปอัตโนมัติ', 'ข้อความยาวเกิน 5,000 (ป้องกันไว้)', 'ถูกตัดให้ ≤ 5,000 พร้อมหมายเหตุ', () => {
+  const g = sumBot(); const t = g.clip_('ก'.repeat(6000)); assert.ok(t.length <= 5000 && t.endsWith('ดูต่อใน Dashboard)'));
+});
+
 fs.writeFileSync(path.join(OUT, 'stats_by_month.json'), JSON.stringify(statsOf, null, 1));
 fs.writeFileSync(path.join(OUT, 'books.json'), JSON.stringify({ cases: caseBook, lab: labBook, sources: g0.__call('getSources') }));
 // หน้าปฏิเสธ (ไว้ถ่ายภาพหน้าจอ)
 fs.writeFileSync(path.join(OUT, 'denied.html'), load({ sheets, email: 'stranger@example.org', props: { ADMIN_CONTACT: 'ผู้ดูแลระบบ (ตัวอย่าง)' } }).doGet().getContent());
 
-// ---------- 4) หน้าเว็บ (Playwright) ----------
+// ---------- 8) หน้าเว็บ (Playwright) ----------
 (async () => {
   if (!process.argv.includes('--unit')) {
     let ui = null;
     try { ui = require('./ui'); } catch (e) { console.log('ข้ามทดสอบหน้าเว็บ: ' + e.message); }
-    if (ui) await ui.run({ results, OUT, EXP, statsOf });
+    if (ui) await ui.run({ results, OUT, EXP, statsOf, botSamples: { pending: pendingSample } });
   }
   const pass = results.filter(r => r.pass).length;
   for (const r of results) console.log(`${r.pass ? 'PASS' : 'FAIL'}  [${r.group}] ${r.name} — ${r.actual}`);
   console.log(`\n${pass}/${results.length} ผ่าน`);
   fs.writeFileSync(path.join(OUT, 'results.json'), JSON.stringify(results, null, 1));
+  fs.writeFileSync(path.join(OUT, 'bot_samples.json'), JSON.stringify({ pending: pendingSample, summary: SUMMARY_SAMPLES, aiPayload, january: janSample }, null, 1));
   process.exit(pass === results.length ? 0 : 1);
 })();

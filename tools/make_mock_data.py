@@ -3,7 +3,8 @@
 
 - seed คงที่ + วันอ้างอิงคงที่ (AS_OF) => รันซ้ำได้ไฟล์เดิมทุกไบต์
 - ชื่อ/เลขทุกค่าเป็นของสมมติ: เจ้าหน้าที่ ก..จ, สภ.ตัวอย่าง1..15, หนังสือ ตย.0000/xxx,
-  LINE User ID แบบ U-mock-NNN, อีเมล staffN@example.com · ไม่มี DNA profile
+  อีเมล staffN@example.com · ไม่มี DNA profile
+- ไม่มีคอลัมน์ User ID (LINE) แล้ว (เจ้าของลบคอลัมน์นี้ออกจากชีตจริง ระบบห้ามพึ่งคอลัมน์นี้)
 - โครงสร้างแท็บ/คอลัมน์ตาม docs/data-schema.md และตัวอ่านใน dashboard/index.html
   (buildCases / buildLab): หัวคอลัมน์อยู่แถว 1, วันที่เก็บเป็นวันที่ Excel (serial)
 
@@ -45,7 +46,7 @@ DATE_FMT = "dd/mm/yyyy"
 CASE_HEAD = ["เลข บก.", "เลขรายงาน", "สภ. (ท้องที่)", "จังหวัด", "เลขหนังสือนำส่ง", "ลงวันที่", "วันที่รับ",
              "วันที่ตรวจเสร็จ", "วันที่มารับผล", "สถานะ", "ประเภทคดี (เลือก)", "ผู้ตรวจ (เลือก)", "ของกลาง (ชิ้น)",
              "เดือนที่รับ", "ปี พ.ศ. (รับ)", "นับในสถิติ", "ข้อสังเกต (ผิดปกติ)", "ปีเลขรายงาน", "ลำดับเลขรายงาน",
-             "User ID (LINE)", "อันดับ (ช่วยคำนวณ)", "ตั้งค่า", "เกณฑ์ของกลางผิดปกติ (ชิ้น) >"]
+             "อันดับ (ช่วยคำนวณ)", "ตั้งค่า", "เกณฑ์ของกลางผิดปกติ (ชิ้น) >"]
 DATE_COLS = {"ลงวันที่", "วันที่รับ", "วันที่ตรวจเสร็จ", "วันที่มารับผล"}
 
 
@@ -116,7 +117,7 @@ def gen_cases(rng):
         rows.append(dict(bk=f"{seq_bk[by]}/{by}", rep=f"03-{by % 100:02d}-{seq_rep[by]:05d}", rep_y=by,
                          rep_n=seq_rep[by], pol=pol, prov=prov, letter=f"ตย.0000/{letter_no}", signed=signed,
                          recv=recv, done=done, pick=pick, status=status, typ=typ, exa=exa, items=items,
-                         counted=1, flags=[], line=None))
+                         counted=1, flags=[]))
 
     # กรณีขอบ: ของกลางผิดปกติ (เกินเกณฑ์) · ไม่ระบุของกลาง · ลงวันที่หลังวันที่รับ · ไม่นับในสถิติ
     picks = rng.sample(range(len(rows)), 12)
@@ -136,10 +137,11 @@ def gen_cases(rng):
             r["flags"].append(f"ของกลางเกินเกณฑ์ ({THRESHOLD} ชิ้น)")
         if r["signed"] > r["recv"]:
             r["flags"].append("ลงวันที่หลังวันที่รับ")
-    # LINE User ID สมมติ (~30% ของแถว) · ค่าซ้ำกันได้เพราะผู้ส่งคนเดียวส่งหลายคดี
-    for r in rows:
+    # เดิมสุ่ม LINE User ID สมมติตรงนี้ คอลัมน์ถูกลบแล้ว แต่ยังเรียก rng เท่าเดิม
+    # เพื่อให้ข้อมูลส่วนอื่น (เช่น lab.xlsx ที่สุ่มต่อจากนี้) เหมือนเดิมทุกค่า
+    for _ in rows:
         if rng.random() < 0.3:
-            r["line"] = f"U-mock-{rng.randint(1, 25):03d}"
+            rng.randint(1, 25)
     return rows
 
 
@@ -157,7 +159,7 @@ def write_cases(rows):
         ws.append([r["bk"], r["rep"], r["pol"], r["prov"], r["letter"], r["signed"], r["recv"], r["done"], r["pick"],
                    r["status"], r["typ"], r["exa"], r["items"], date(r["recv"].year, r["recv"].month, 1),
                    r["recv"].year + 543, r["counted"], "; ".join(r["flags"]) or None, r["rep_y"], r["rep_n"],
-                   r["line"], i + 1,
+                   i + 1,
                    "เกณฑ์ของกลางผิดปกติ (ชิ้น)" if i == 0 else None, THRESHOLD if i == 0 else None])
     for j, h in enumerate(CASE_HEAD, start=1):
         fmt = DATE_FMT if h in DATE_COLS else "mmm yyyy" if h == "เดือนที่รับ" else None

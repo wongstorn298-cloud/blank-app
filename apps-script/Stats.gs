@@ -7,6 +7,7 @@
  *   - แถวที่คอลัมน์ "นับในสถิติ" = 0 ไม่นับ (ช่องว่างหรือไม่มีคอลัมน์ = นับ)
  *   - ของกลางรวมเฉพาะช่องที่เป็นตัวเลข
  *   - ประเภทคดี/ผู้ตรวจที่ว่าง แสดงเป็น "ไม่ระบุ"
+ *   - สถานะ: 'รับผลไปแล้ว' = เสร็จ, มีคำว่า 'รอรับผล' = รอรับผล, ค่าอื่น (รวมช่องว่าง) = กำลังดำเนินการ
  *
  * ไฟล์นี้เป็น "ฟังก์ชันล้วน" ไม่เรียก SpreadsheetApp หรือบริการอื่นของ Google
  * จึงรันทดสอบใน Node ได้ (apps-script/test/run.js)
@@ -20,7 +21,7 @@
  *   const cases = loadCaseRecords_();                       // อยู่ใน Code.gs
  *   const r = Stats.previousMonthRange(new Date());         // เดือนปฏิทินก่อนหน้า (เวลาไทย)
  *   const s = Stats.summarize(cases, r);                    // { cases, evidence, byType, byOfficer, ... }
- *   const p = Stats.pendingCases(cases, { today: Stats.todayYmd(new Date()) });
+ *   const p = Stats.pendingByStatus(cases, { today: Stats.todayYmd(new Date()) }); // แยก 2 กลุ่ม
  *   const f = Stats.findCase(cases, '123/2568');            // [] ถ้าไม่พบ
  */
 var Stats = (function () {
@@ -95,7 +96,7 @@ var Stats = (function () {
 
   /**
    * แปลงตาราง "ข้อมูลคดี" (แถวแรก = หัวคอลัมน์, วันที่เป็น serial) เป็นรายการคดี
-   * ไม่อ่านคอลัมน์อื่นนอกจาก COLUMNS (เช่น User ID LINE)
+   * ไม่อ่านคอลัมน์อื่นนอกจาก COLUMNS
    */
   function parseCases(rows) {
     if (!rows || !rows.length) return [];
@@ -158,23 +159,66 @@ var Stats = (function () {
   }
 
   /**
-   * คดีค้าง: สถานะ "กำลังดำเนินการ" หรือ "เสร็จแล้ว รอรับผล" (เฉพาะแถวที่นับในสถิติ เหมือน Dashboard)
-   * opts.today = 'YYYY-MM-DD' ใช้คำนวณจำนวนวันที่ค้าง (ไม่ใส่ = ไม่คำนวณ)
-   * @return {{total, byStatus:{กำลังดำเนินการ:number, 'เสร็จแล้ว รอรับผล':number}, list:{bk,status,recvYmd,ageDays}[]}}
-   *         list เรียงจากค้างนานที่สุด
+   * สถานะสำหรับนับ ใช้กติกาเดียวกับ Dashboard (dashboard/index.html → statusOf):
+   *   'รับผลไปแล้ว' = เสร็จสิ้น · มีคำว่า 'รอรับผล' = เสร็จแล้ว รอรับผล
+   *   ค่าอื่นทั้งหมด (รวมช่องสถานะว่าง/สะกดอื่น) = กำลังดำเนินการ (ถือว่ายังค้าง ไม่ซ่อนคดีที่ข้อมูลไม่ครบ)
+   */
+  function statusGroup(status) {
+    var s = text(status);
+    if (s === ST_DONE) return ST_DONE;
+    if (s.indexOf('รอรับผล') >= 0) return ST_WAITING;
+    return ST_PROGRESS;
+  }
+
+  /**
+   * คดีค้าง = แถวที่นับในสถิติ และสถานะยังไม่ใช่ "รับผลไปแล้ว" (เหมือน Dashboard เมนูระยะเวลาและงานค้าง)
+   * แบ่งเป็น "กำลังดำเนินการ" (รวมแถวที่ช่องสถานะว่าง) และ "เสร็จแล้ว รอรับผล"
+   * opts.today = 'YYYY-MM-DD' ใช้คำนวณจำนวนวัน (ไม่ใส่ = ไม่คำนวณ)
+   * @return {{total, byStatus:{กำลังดำเนินการ:number, 'เสร็จแล้ว รอรับผล':number}, blankStatus:number,
+   *           list:{bk,status,group,recvYmd,doneYmd,ageDays,waitDays}[]}}
+   *   status = ค่าในชีต, group = กลุ่มที่นับ, ageDays = วันนับจากวันที่รับ,
+   *   waitDays = วันนับจากวันที่ตรวจเสร็จ (เฉพาะกลุ่มรอรับผลที่มีวันที่ตรวจเสร็จ) · list เรียงจากรับก่อน
    */
   function pendingCases(cases, opts) {
     opts = opts || {};
-    var byStatus = {}, list = [];
+    var byStatus = {}, list = [], blank = 0;
     PENDING_STATUSES.forEach(function (s) { byStatus[s] = 0; });
+    var days = function (ymd) { return opts.today && ymd ? Math.max(0, ymdToDays(opts.today) - ymdToDays(ymd)) : null; };
     cases.forEach(function (c) {
-      if (!c.counted || PENDING_STATUSES.indexOf(c.status) < 0) return;
-      byStatus[c.status]++;
-      list.push({ bk: c.bk, status: c.status, recvYmd: c.recvYmd,
-        ageDays: opts.today ? Math.max(0, ymdToDays(opts.today) - ymdToDays(c.recvYmd)) : null });
+      if (!c.counted) return;
+      var g = statusGroup(c.status);
+      if (g === ST_DONE) return;
+      byStatus[g]++;
+      if (!c.status) blank++;
+      list.push({ bk: c.bk, status: c.status, group: g, recvYmd: c.recvYmd, doneYmd: c.doneYmd,
+        ageDays: days(c.recvYmd), waitDays: g === ST_WAITING ? days(c.doneYmd) : null });
     });
     list.sort(function (a, b) { return a.recvYmd < b.recvYmd ? -1 : a.recvYmd > b.recvYmd ? 1 : 0; });
-    return { total: list.length, byStatus: byStatus, list: list };
+    return { total: list.length, byStatus: byStatus, blankStatus: blank, list: list };
+  }
+
+  /**
+   * คดีค้างแยก 2 กลุ่ม สำหรับข้อความ LINE: จำนวนแต่ละกลุ่ม + เลข บก. ที่ค้างนานสุดกลุ่มละ opts.top คดี (ค่าเริ่มต้น 3)
+   * กำลังดำเนินการ เรียงตามวันที่รับ (days = วันนับจากวันที่รับ)
+   * เสร็จแล้ว รอรับผล เรียงตามวันที่ตรวจเสร็จ (days = วันนับจากวันที่ตรวจเสร็จ ถ้าไม่มีใช้วันที่รับ)
+   * @return {{total, today, inProgress:{count, blankStatus, oldest:{bk,days}[]}, waiting:{count, oldest:{bk,days}[]}}}
+   */
+  function pendingByStatus(cases, opts) {
+    opts = opts || {};
+    var top = opts.top == null ? 3 : opts.top;
+    var p = pendingCases(cases, { today: opts.today });
+    var prog = p.list.filter(function (x) { return x.group === ST_PROGRESS; });
+    var wait = p.list.filter(function (x) { return x.group === ST_WAITING; }).sort(function (a, b) {
+      var ka = a.doneYmd || a.recvYmd, kb = b.doneYmd || b.recvYmd;
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
+    return {
+      total: p.total, today: opts.today || null,
+      inProgress: { count: prog.length, blankStatus: p.blankStatus,
+        oldest: prog.slice(0, top).map(function (x) { return { bk: x.bk, days: x.ageDays }; }) },
+      waiting: { count: wait.length,
+        oldest: wait.slice(0, top).map(function (x) { return { bk: x.bk, days: x.waitDays != null ? x.waitDays : x.ageDays }; }) }
+    };
   }
 
   /** ทำเลขคดีให้อยู่รูปเดียวกัน: ตัดช่องว่าง, เลขไทย → อารบิก, ตัด 0 นำหน้าลำดับ */
@@ -186,7 +230,7 @@ var Stats = (function () {
 
   /**
    * ค้นคดีจาก "เลข บก." (เช่น '123/2568') รวมแถวที่ไม่นับในสถิติด้วย
-   * คืนเฉพาะข้อมูลสถานะ (ไม่มีชื่อผู้ตรวจ ไม่มี User ID)
+   * คืนเฉพาะข้อมูลสถานะ (ไม่มีชื่อผู้ตรวจ)
    * @return {{bk,report,station,province,status,type,items,recvYmd,doneYmd,pickYmd}[]} ว่าง = ไม่พบ
    */
   function findCase(cases, caseNo) {
@@ -200,7 +244,8 @@ var Stats = (function () {
 
   return {
     UNSPECIFIED: UNSPECIFIED, PENDING_STATUSES: PENDING_STATUSES, STATUS_DONE: ST_DONE, COLUMNS: COLUMNS,
-    parseCases: parseCases, summarize: summarize, pendingCases: pendingCases, findCase: findCase,
+    parseCases: parseCases, summarize: summarize, pendingCases: pendingCases, pendingByStatus: pendingByStatus,
+    statusGroup: statusGroup, findCase: findCase, ymdToDays: ymdToDays,
     normalizeCaseNo: normalizeCaseNo, monthRange: monthRange, yearRange: yearRange,
     previousMonthRange: previousMonthRange, previousYearRange: previousYearRange,
     todayYmd: todayYmd, serialToYmd: serialToYmd

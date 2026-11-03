@@ -425,7 +425,7 @@ async function buildLab(book, tabs){
   return { kind: 'lab', cases, budget, brows, lots, years: [...years].sort((a, b) => a - b), notes };
 }
 
-/* ---------- แม่แบบ cases: ข้อมูลคดี → โมเดล (ไม่อ่านคอลัมน์ User ID LINE) ---------- */
+/* ---------- แม่แบบ cases: ข้อมูลคดี → โมเดล (อ่านเฉพาะคอลัมน์ที่ใช้ ไม่พึ่งคอลัมน์ User ID LINE ซึ่งลบออกจากชีตแล้ว) ---------- */
 async function buildCases(book, tabs){
   const rows = await getRows(book, tabs.data, 'เลข บก.');
   if (!rows) throw new Error('ไม่พบแท็บ "' + tabs.data + '" หรือหัวคอลัมน์ไม่ตรงแม่แบบ (คอลัมน์แรกต้องเป็น "เลข บก.")');
@@ -884,7 +884,7 @@ function viewSources(){
       <li><b>Google Sheet เป็นแบบส่วนตัว</b> ไม่ต้องแชร์ "ทุกคนที่มีลิงก์" เซิร์ฟเวอร์ Apps Script อ่านข้อมูลให้เฉพาะผู้ที่มีชื่อในแท็บ <code>ผู้ใช้</code></li>
       <li><b>เปลี่ยนชีต</b> ผู้ดูแลแก้ค่า <code>CASES_SHEET_ID</code> / <code>LAB_SHEET_ID</code> ใน Script Properties (ดูคู่มือ apps-script/README.md)</li>
       <li>แก้ข้อมูลในชีตตามปกติ หน้านี้จะดึงข้อมูลใหม่ทุก ${Math.round(S.refreshSec / 60)} นาที และเมื่อกลับมาเปิดแท็บนี้</li>
-      <li>หน้าเว็บไม่อ่านคอลัมน์ User ID (LINE) และไม่แสดง DNA profile</li></ol></section>
+      <li>หน้าเว็บได้รับเฉพาะคอลัมน์ที่ใช้แสดงผล และไม่แสดง DNA profile</li></ol></section>
     <section class="card span-5"><div class="card-h"><div><h2>แม่แบบที่รองรับ</h2><p>ตรวจอัตโนมัติจากชื่อแท็บ</p></div></div><div class="two" style="grid-template-columns:1fr">
       <div><h4>${TPL.cases.short}</h4>แท็บ <code>ข้อมูลคดี</code> · หัวคอลัมน์: เลข บก. · เลขรายงาน · สภ. (ท้องที่) · จังหวัด · วันที่รับ · วันที่ตรวจเสร็จ · วันที่มารับผล · สถานะ · ประเภทคดี (เลือก) · ผู้ตรวจ (เลือก) · ของกลาง (ชิ้น) · นับในสถิติ · ข้อสังเกต (ผิดปกติ)</div>
       <div><h4>${TPL.lab.short}</h4>แท็บ <code>ข้อมูลเคส</code> · <code>ข้อมูลงบ</code> · <code>ข้อมูล Lot</code> (และ <code>หมายเหตุ</code> ถ้ามี)</div></div></section>

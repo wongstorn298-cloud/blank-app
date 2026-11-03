@@ -6,7 +6,10 @@
  *   ทุกครั้งที่ขอข้อมูลจะตรวจสิทธิ์ซ้ำ (ไม่ได้ตรวจแค่ตอนเปิดหน้า)
  * - Sheet ID อ่านจาก Script Properties: CASES_SHEET_ID, LAB_SHEET_ID (ไม่ใส่ในโค้ด)
  *   ADMIN_CONTACT (ไม่บังคับ) = ข้อความบอกผู้ไม่มีสิทธิ์ว่าให้ติดต่อใคร
- * - อ่านเฉพาะแท็บ/คอลัมน์ที่ Dashboard ใช้ ไม่ส่งคอลัมน์ User ID (LINE) ไปหน้าเว็บ
+ * - อ่านเฉพาะแท็บ/คอลัมน์ที่ Dashboard ใช้ (ไม่พึ่งคอลัมน์ User ID (LINE) ซึ่งเจ้าของลบออกแล้ว ถ้ายังมีก็ไม่ส่ง)
+ * - โปรเจกต์เดียวกันมี LINE bot (LineBot.gs) ที่ต้อง Deploy แยกแบบ "Execute as: Me" — ในรายการ Deploy นั้น
+ *   doGet / getSources / getBook ต้องปฏิเสธเสมอ: ถ้าสคริปต์ทำงานในนามบัญชีอื่นที่ไม่ใช่คนที่เปิด
+ *   (effective user ≠ active user) หรือไม่ทราบอีเมลผู้เปิด จะไม่ส่งข้อมูล (ดู checkAccess_)
  *
  * วิธีติดตั้ง: ดู apps-script/README.md
  *
@@ -99,7 +102,10 @@ function checkSetup() {
 
 // --- สำหรับ LINE bot / สรุปอัตโนมัติ (ฝั่งเซิร์ฟเวอร์เท่านั้น) ---
 
-/** รายการคดีทั้งหมดในรูปของ Stats.parseCases() — ไม่ตรวจสิทธิ์ผู้ใช้ (ผู้เรียกต้องกรองเอง เช่น groupId) */
+/**
+ * รายการคดีทั้งหมดในรูปของ Stats.parseCases() — ไม่ตรวจสิทธิ์ผู้ใช้ (ผู้เรียกต้องกรองเอง เช่น groupId)
+ * ชื่อลงท้าย _ = หน้าเว็บเรียกผ่าน google.script.run ไม่ได้ ใช้ได้เฉพาะโค้ดฝั่งเซิร์ฟเวอร์ (LineBot.gs / Summary.gs)
+ */
 function loadCaseRecords_() {
   var tabs = readCasesTabs_(openSource_('cases'));
   return Stats.parseCases(tabs[CONFIG.CASES_TAB]);
@@ -111,12 +117,21 @@ function viewerEmail_() {
   try { return String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) { return ''; }
 }
 
+/** บัญชีที่สคริปต์ทำงานในนาม (Deploy แบบ Me = เจ้าของ, แบบ User accessing = คนที่เปิด) */
+function effectiveEmail_() {
+  try { return String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) { return ''; }
+}
+
 /**
  * ตรวจว่าอีเมลอยู่ในแท็บ "ผู้ใช้" หรือไม่
- * @return {{ok:boolean, email:string, reason:string}} reason: no-email | no-config | no-sheet-access | no-users-tab | not-listed
+ * @return {{ok:boolean, email:string, reason:string}}
+ *   reason: no-email | wrong-deployment | no-config | no-sheet-access | no-users-tab | not-listed
  */
 function checkAccess_(email) {
   if (!email) return { ok: false, email: '', reason: 'no-email' };
+  // Deploy แบบ "Execute as: Me" (รายการ Deploy ของ LINE bot) จะอ่านชีตด้วยสิทธิ์เจ้าของแทนผู้เปิด → ห้ามส่งข้อมูล
+  var eff = effectiveEmail_();
+  if (eff && eff !== email) return { ok: false, email: email, reason: 'wrong-deployment' };
   var cache = userCache_(), ck = 'acl:' + email;
   if (cache && cache.get(ck) === '1') return { ok: true, email: email, reason: '' };
   var id = PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_CASES);
@@ -152,6 +167,7 @@ function messagePage_(access) {
     : 'ระบบไม่ทราบอีเมลของคุณ (Google ไม่ได้ส่งอีเมลมาให้) · ลองออกจากระบบแล้วเข้าสู่ระบบด้วยบัญชี Google ที่ได้รับสิทธิ์ หรือแจ้งผู้ดูแลให้ตรวจการตั้งค่า Deploy';
   var why = {
     'no-email': '',
+    'wrong-deployment': 'ลิงก์นี้ไม่ใช่ลิงก์ Dashboard (เป็นลิงก์สำหรับระบบอื่น) · โปรดใช้ลิงก์ Dashboard ที่ผู้ดูแลส่งให้',
     'no-config': 'ผู้ดูแลยังไม่ได้ตั้งค่า CASES_SHEET_ID ใน Script Properties',
     'no-sheet-access': 'บัญชีนี้ยังไม่ได้รับสิทธิ์ "ผู้มีสิทธิ์อ่าน" ใน Google Sheet ข้อมูลคดี',
     'no-users-tab': 'ไม่พบแท็บ "' + CONFIG.USERS_TAB + '" หรือคอลัมน์ "' + CONFIG.USERS_EMAIL_HEAD + '" ในชีตข้อมูลคดี',
@@ -181,7 +197,7 @@ function openSource_(key) {
   catch (e) { throw new Error('เปิด Google Sheet "' + SOURCES[key].name + '" ไม่ได้ · ตรวจ Sheet ID และสิทธิ์การแชร์'); }
 }
 
-/** แท็บข้อมูลคดี: ส่งเฉพาะคอลัมน์ใน CONFIG.CASES_COLUMNS (ไม่ส่ง User ID LINE / เลขหนังสือ ฯลฯ) */
+/** แท็บข้อมูลคดี: ส่งเฉพาะคอลัมน์ใน CONFIG.CASES_COLUMNS (ไม่ส่งเลขหนังสือ / ลงวันที่ / คอลัมน์อื่นที่ไม่ใช้) */
 function readCasesTabs_(ss) {
   var sh = ss.getSheetByName(CONFIG.CASES_TAB);
   if (!sh) throw new Error('ไม่พบแท็บ "' + CONFIG.CASES_TAB + '" ในชีตข้อมูลคดี');
