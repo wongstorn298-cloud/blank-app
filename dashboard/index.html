@@ -765,7 +765,7 @@ function casesOverview(M, yr){
 function casesArea(M, yr){
   const rs = scope(M, yr), n = rs.length;
   const prov = groupCount(rs, r => r.prov || 'ไม่ระบุ'), pol = groupCount(rs, r => (r.pol || 'ไม่ระบุ') + '||' + r.prov).slice(0, 15);
-  const typ = groupCount(rs, r => r.typ || 'ยังไม่ระบุ'), exa = groupCount(rs, r => r.exa || 'ยังไม่ระบุ');
+  const typ = groupCount(rs, r => r.typ || 'ไม่ระบุ'), exa = groupCount(rs, r => r.exa || 'ไม่ระบุ');
   const typed = rs.filter(r => r.typ).length, exad = rs.filter(r => r.exa).length;
   const kp = [kpi('a_p', 'จังหวัดที่ส่งตรวจ', n0(prov.length), `<span>${yr ? 'ปี ' + yr : 'ทุกปี'}</span>`, true), kpi('a_s', 'สภ. ที่ส่งตรวจ', n0(new Set(rs.map(r => r.pol)).size), `<span>จาก ${n0(n)} คดี</span>`),
     kpi('a_t', 'คดีที่ระบุประเภทแล้ว', n0(typed), `<span>${n ? (typed / n * 100).toFixed(1) : 0}% ของคดีทั้งหมด</span>`), kpi('a_e', 'คดีที่ระบุผู้ตรวจแล้ว', n0(exad), `<span>${n ? (exad / n * 100).toFixed(1) : 0}% ของคดีทั้งหมด</span>`)].join('');
@@ -773,8 +773,8 @@ function casesArea(M, yr){
   return `<div class="kpis k4">${kp}</div><div class="grid">
     <section class="card span-6"><div class="card-h"><div><h2>จำนวนคดีแยกตามจังหวัด</h2><p>เรียงจากมากไปน้อย</p></div></div>${hbars(asItems(prov))}</section>
     <section class="card span-6"><div class="card-h"><div><h2>สภ. ที่ส่งตรวจมากที่สุด 15 อันดับ</h2><p>จำนวนคดี</p></div></div>${hbars(pol.map(o => { const [p, v] = o.l.split('||'); return { l: p, tag: v, v: o.v, sub: o.items ? `ของกลาง ${n0(o.items)} ชิ้น` : '' }; }))}</section>
-    <section class="card span-6"><div class="card-h"><div><h2>ประเภทคดี</h2><p>${typed ? 'ตามที่เลือกในคอลัมน์ ประเภทคดี (เลือก)' : 'ยังไม่มีการเลือกประเภทคดีในแท็บข้อมูลคดี'}</p></div></div>${hbars(typ.map(o => ({ ...o, c: o.l === 'ยังไม่ระบุ' ? 'var(--s2)' : null })))}</section>
-    <section class="card span-6"><div class="card-h"><div><h2>ผู้ตรวจ</h2><p>${exad ? 'ตามที่เลือกในคอลัมน์ ผู้ตรวจ (เลือก)' : 'ยังไม่มีการเลือกผู้ตรวจในแท็บข้อมูลคดี'}</p></div></div>${hbars(exa.map(o => ({ ...o, c: o.l === 'ยังไม่ระบุ' ? 'var(--s2)' : null })))}</section></div>`;
+    <section class="card span-6"><div class="card-h"><div><h2>ประเภทคดี</h2><p>${typed ? 'ตามที่เลือกในคอลัมน์ ประเภทคดี (เลือก)' : 'ยังไม่มีการเลือกประเภทคดีในแท็บข้อมูลคดี'}</p></div></div>${hbars(typ.map(o => ({ ...o, c: o.l === 'ไม่ระบุ' ? 'var(--s2)' : null })))}</section>
+    <section class="card span-6"><div class="card-h"><div><h2>ผู้ตรวจ</h2><p>${exad ? 'ตามที่เลือกในคอลัมน์ ผู้ตรวจ (เลือก)' : 'ยังไม่มีการเลือกผู้ตรวจในแท็บข้อมูลคดี'}</p></div></div>${hbars(exa.map(o => ({ ...o, c: o.l === 'ไม่ระบุ' ? 'var(--s2)' : null })))}</section></div>`;
 }
 function casesTime(M, yr){
   const rs = scope(M, yr), d1 = rs.map(r => r.d1).filter(v => v != null), d2 = rs.map(r => r.d2).filter(v => v != null);
@@ -806,7 +806,7 @@ function casesCheck(M){
 
 /* ---------- รายเดือน: ประเภทคดี · จังหวัด · ผู้ตรวจ ---------- */
 function casesMonthly(M, yr){
-  const UN = 'ยังไม่ระบุ', UE = 'ยังไม่ระบุผู้ตรวจ';
+  const UN = 'ไม่ระบุ', UE = 'ไม่ระบุผู้ตรวจ';
   const rs = scope(M, yr), ms = monthsOf(rs).filter(o => o.n), N = rs.length;
   if (S.cm && !ms.some(o => o.k === S.cm)) S.cm = 0;
   const rsm = S.cm ? rs.filter(r => r.y*100 + r.m === S.cm) : rs, mLab = S.cm ? mFull(ms.find(o => o.k === S.cm)) : 'ทุกเดือน';
@@ -818,7 +818,7 @@ function casesMonthly(M, yr){
   const pickT = a => S.hideUn ? a.filter(r => r.typ) : a, pickE = a => S.hideUn ? a.filter(r => r.exa) : a;
   const typed = rs.filter(r => r.typ).length, exad = rs.filter(r => r.exa).length;
   const cov = (typed < N * .5 || exad < N * .5) ? `<div class="msg warn"><b>ข้อมูลที่แยกตามประเภทคดี/ผู้ตรวจยังน้อย:</b> ตอนนี้ระบุประเภทคดีแล้ว ${n0(typed)} จาก ${n0(N)} คดี (${N ? (typed / N * 100).toFixed(1) : 0}%) และระบุผู้ตรวจแล้ว ${n0(exad)} คดี (${N ? (exad / N * 100).toFixed(1) : 0}%) · ตารางด้านล่างจะเต็มขึ้นเองเมื่อเลือกค่าในคอลัมน์ "ประเภทคดี (เลือก)" และ "ผู้ตรวจ (เลือก)" ในแท็บข้อมูลคดี</div>` : '';
-  const toolbar = `<div class="toolbar"><label for="cmSel"><b>เดือนที่รับคดี</b></label><select class="sel" id="cmSel"><option value="0">ทุกเดือน (${n0(N)} คดี)</option>${ms.map(o => `<option value="${o.k}"${o.k === S.cm ? ' selected' : ''}>${mFull(o)} (${n0(o.n)} คดี)</option>`).join('')}</select><label><input type="checkbox" id="hideUn"${S.hideUn ? ' checked' : ''}> ซ่อนคดีที่ยังไม่ระบุประเภท/ผู้ตรวจ</label></div>`;
+  const toolbar = `<div class="toolbar"><label for="cmSel"><b>เดือนที่รับคดี</b></label><select class="sel" id="cmSel"><option value="0">ทุกเดือน (${n0(N)} คดี)</option>${ms.map(o => `<option value="${o.k}"${o.k === S.cm ? ' selected' : ''}>${mFull(o)} (${n0(o.n)} คดี)</option>`).join('')}</select><label><input type="checkbox" id="hideUn"${S.hideUn ? ' checked' : ''}> ซ่อนคดีที่ไม่ระบุประเภท/ผู้ตรวจ</label></div>`;
   // A) ประเภทคดีรายเดือน
   const rsT = pickT(rs), per = ms.map(o => rsT.filter(r => r.y*100 + r.m === o.k));
   const chart = chartCard('span-7', { title: 'ประเภทคดีรายเดือน', sub: 'จำนวนคดีแยกตามประเภท · นับตามวันที่รับ', cats: ms.map(mShort), tipCats: ms.map(mFull), catLabel: 'เดือน', h: 280, stacked: true,
@@ -846,7 +846,7 @@ function casesMonthly(M, yr){
   const exaMx = `<section class="card span-12"><div class="card-h"><div><h2>ผู้ตรวจ × เดือน</h2><p>จำนวนคดีที่ผู้ตรวจแต่ละคนได้รับในแต่ละเดือน</p></div></div>${mxtab(pickE(rs), r => r.exa || UE, 'exa')}</section>`;
   let drill = '';
   if (S.drill) { const d = S.drill, list = rsm.filter(r => (d.k === 'prov' ? (r.prov || 'ไม่ระบุ') : (r.exa || UE)) === d.v).sort((a, b) => a.t - b.t), shown = list.slice(0, 200);
-    drill = `<section class="card span-12" id="drillCard"><div class="card-h"><div><h2>รายการคดี · ${esc(d.v)} · ${esc(mLab)}</h2><p>${n0(list.length)} คดี${list.length > shown.length ? ' (แสดง 200 คดีแรก)' : ''} · คลิกแถวเดิมอีกครั้งเพื่อปิด</p></div></div><div class="scroll" style="max-height:480px"><table><thead><tr><th class="l">เลข บก.</th><th class="l">สภ.</th><th class="l">จังหวัด</th><th class="l">วันที่รับ</th><th class="l">ประเภทคดี</th><th class="l">ผู้ตรวจ</th><th>ของกลาง</th><th class="l">สถานะ</th></tr></thead><tbody>${shown.map(r => `<tr><td class="l">${esc(r.bk)}</td><td class="l">${esc(r.pol)}</td><td class="l">${esc(r.prov)}</td><td class="l">${new Date(r.t).getUTCDate()} ${CAL[r.m-1]} ${r.by}</td><td class="l">${r.typ ? esc(r.typ) : '<span class="badge ok">ยังไม่ระบุ</span>'}</td><td class="l">${r.exa ? esc(r.exa) : '<span class="badge ok">ยังไม่ระบุ</span>'}</td><td>${n0(r.items)}</td><td class="l"><span class="badge${r.done ? ' ok' : ''}">${esc(statusOf(r))}</span></td></tr>`).join('')}</tbody></table></div></section>`; }
+    drill = `<section class="card span-12" id="drillCard"><div class="card-h"><div><h2>รายการคดี · ${esc(d.v)} · ${esc(mLab)}</h2><p>${n0(list.length)} คดี${list.length > shown.length ? ' (แสดง 200 คดีแรก)' : ''} · คลิกแถวเดิมอีกครั้งเพื่อปิด</p></div></div><div class="scroll" style="max-height:480px"><table><thead><tr><th class="l">เลข บก.</th><th class="l">สภ.</th><th class="l">จังหวัด</th><th class="l">วันที่รับ</th><th class="l">ประเภทคดี</th><th class="l">ผู้ตรวจ</th><th>ของกลาง</th><th class="l">สถานะ</th></tr></thead><tbody>${shown.map(r => `<tr><td class="l">${esc(r.bk)}</td><td class="l">${esc(r.pol)}</td><td class="l">${esc(r.prov)}</td><td class="l">${new Date(r.t).getUTCDate()} ${CAL[r.m-1]} ${r.by}</td><td class="l">${r.typ ? esc(r.typ) : '<span class="badge ok">ไม่ระบุ</span>'}</td><td class="l">${r.exa ? esc(r.exa) : '<span class="badge ok">ไม่ระบุ</span>'}</td><td>${n0(r.items)}</td><td class="l"><span class="badge${r.done ? ' ok' : ''}">${esc(statusOf(r))}</span></td></tr>`).join('')}</tbody></table></div></section>`; }
   return `${toolbar}${cov}<div class="grid">${chart}${tTable}${mTable}${provCard}${exaCard}${drill}${provMx}${exaMx}</div>`;
 }
 

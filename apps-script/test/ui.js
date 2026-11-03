@@ -112,12 +112,12 @@ async function run({ results, OUT, EXP, statsOf, botSamples }) {
         const t = c.querySelector('table'); return { head: [...t.tHead.rows[0].cells].map(x => x.textContent.trim()), rows: [...t.tBodies[0].rows].map(r => [...r.cells].map(x => x.textContent.trim())) }; });
       const s = statsOf['2026-10'], off = Object.fromEntries(s.byOfficer.map(o => [o.name, Object.fromEntries(o.byType.map(t => [t.name, t.cases]))]));
       const tot = Object.fromEntries(s.byOfficer.map(o => [o.name, o.cases]));
-      const cols = tb.head.slice(1, -1), shown = cols.filter(c => c !== 'อื่นๆ' && c !== 'ยังไม่ระบุ');
+      const cols = tb.head.slice(1, -1), shown = cols.filter(c => c !== 'อื่นๆ' && c !== 'ไม่ระบุ');
       let cells = 0;
       for (const r of tb.rows) {
-        const name = r[0] === 'ยังไม่ระบุผู้ตรวจ' ? 'ไม่ระบุ' : r[0], st = off[name]; if (!st) throw new Error('ไม่พบผู้ตรวจ ' + name);
+        const name = r[0] === 'ไม่ระบุผู้ตรวจ' ? 'ไม่ระบุ' : r[0], st = off[name]; if (!st) throw new Error('ไม่พบผู้ตรวจ ' + name);
         cols.forEach((c, i) => {
-          const want = c === 'ยังไม่ระบุ' ? (st['ไม่ระบุ'] || 0) : c === 'อื่นๆ' ? Object.entries(st).filter(([k]) => k !== 'ไม่ระบุ' && !shown.includes(k)).reduce((a, [, v]) => a + v, 0) : (st[c] || 0);
+          const want = c === 'ไม่ระบุ' ? (st['ไม่ระบุ'] || 0) : c === 'อื่นๆ' ? Object.entries(st).filter(([k]) => k !== 'ไม่ระบุ' && !shown.includes(k)).reduce((a, [, v]) => a + v, 0) : (st[c] || 0);
           eq(r[i + 1] === '·' ? 0 : num(r[i + 1]), want, `${name}/${c}`); cells++;
         });
         eq(num(r.at(-1)), tot[name], name + ' รวม'); cells++;

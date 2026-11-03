@@ -113,7 +113,7 @@ function formatCaseStatus_(caseNo, found) {
   return found.slice(0, 3).map(function (c, i) {
     var head = 'คดี ' + caseNo + (found.length > 1 ? ' (รายการที่ ' + (i + 1) + '/' + found.length + ')' : '');
     return [head,
-      'สถานะ: ' + (c.status || 'ยังไม่ระบุ'),
+      'สถานะ: ' + (c.status || 'ไม่ระบุ'),
       'ประเภทคดี: ' + c.type,
       'ของกลาง: ' + (c.items != null ? fmtNum_(c.items) + ' ชิ้น' : '-'),
       'วันที่รับ: ' + thaiDate_(c.recvYmd),
