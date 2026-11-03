@@ -18,7 +18,18 @@ from zipforge.builders import build_auto, package_site
 from zipforge.extract import ZipError, load_zip
 from zipforge.office import render as render_office
 
-st.set_page_config(page_title="ZipForge AI", page_icon="🏭", layout="wide")
+st.set_page_config(page_title="ZipForge AI", page_icon=":material/factory:", layout="wide")
+
+ACCESS_ICONS = {"public": ":material/public:", "password": ":material/password:",
+                "emails": ":material/alternate_email:", "private": ":material/lock:"}
+ACCESS_HELP = {"public": "ทุกคนที่มีลิงก์เปิดได้", "password": "ต้องใส่รหัสผ่านก่อนเข้า",
+               "emails": "เฉพาะอีเมลที่อนุญาต (ต้องล็อกอิน)", "private": "เฉพาะผู้ที่มีคีย์เจ้าของ"}
+KIND_ICONS = {"static": ":material/language:", "data": ":material/table_chart:", "docs": ":material/menu_book:",
+              "gallery": ":material/photo_library:", "code": ":material/code:"}
+AGENT_ICONS = {"secretary": ":material/assignment:", "analyst": ":material/query_stats:",
+               "architect": ":material/architecture:", "developer": ":material/code:",
+               "qa": ":material/verified:", "devops": ":material/rocket_launch:"}
+STATUS_BADGE = {"new": "blue", "working": "primary", "review": "orange", "idle": "gray"}
 
 
 state = st.session_state
@@ -83,15 +94,19 @@ def sample_zip() -> bytes:
     return buf.getvalue()
 
 
+def access_label(level: str) -> str:
+    return f"{ACCESS_ICONS[level]} {hosting.ACCESS_LEVELS[level]}"
+
+
 def access_inputs(key: str, current: hosting.Site | None = None) -> tuple[str, str, list[str]]:
     """Widgets for choosing who can open a site. Returns (access, password, emails)."""
-    levels = list(hosting.ACCESS_LEVELS)
-    access = st.radio("ใครเข้าถึงเว็บนี้ได้บ้าง?", levels,
-                      index=levels.index(current.access) if current else 0,
-                      format_func=hosting.ACCESS_LEVELS.get, key=f"{key}-access")
+    access = st.segmented_control("ใครเข้าถึงเว็บนี้ได้บ้าง", list(hosting.ACCESS_LEVELS),
+                                  default=current.access if current else "public", required=True,
+                                  format_func=access_label, key=f"{key}-access")
+    st.caption(ACCESS_HELP[access])
     password, emails = "", []
     if access == "password":
-        hint = " (เว้นว่าง = ใช้รหัสเดิม)" if current and current.password_hash else ""
+        hint = " (เว้นว่างเพื่อใช้รหัสเดิม)" if current and current.password_hash else ""
         password = st.text_input("ตั้งรหัสผ่าน" + hint, type="password", key=f"{key}-pw")
     elif access == "emails":
         raw = st.text_area("อีเมลที่อนุญาต (คั่นด้วยบรรทัดใหม่หรือจุลภาค)",
@@ -100,49 +115,49 @@ def access_inputs(key: str, current: hosting.Site | None = None) -> tuple[str, s
         try:
             emails = hosting.parse_emails(raw)
         except hosting.HostingError as exc:
-            st.error(str(exc))
+            st.error(str(exc), icon=":material/error:")
         if not login_configured():
-            st.warning("ยังไม่ได้ตั้งค่าระบบล็อกอิน — ผู้เข้าชมจะยังเปิดเว็บนี้ไม่ได้จนกว่าจะตั้งค่า `[auth]` "
-                       "ใน Secrets (ดู README)")
-    elif access == "private":
-        st.caption("เปิดได้เฉพาะผู้ที่มี **คีย์เจ้าของ** เท่านั้น")
+            st.warning("ผู้เข้าชมจะยังเปิดเว็บนี้ไม่ได้จนกว่าจะตั้งค่า `[auth]` ใน Secrets (ดู README)",
+                       icon=":material/warning:", title="ยังไม่ได้ตั้งค่าระบบล็อกอิน")
     return access, password, emails
 
 
 def publish_panel(html: str, default_title: str, key: str) -> None:
     """'Put it online' form shown under every generated result."""
     with st.container(border=True):
-        st.markdown("### 🚀 เผยแพร่เป็นเว็บไซต์จริง")
+        st.subheader("เผยแพร่เป็นเว็บไซต์จริง", icon=":material/rocket_launch:")
         c1, c2 = st.columns(2)
         title = c1.text_input("ชื่อเว็บไซต์", value=default_title, key=f"{key}-title")
         slug = c2.text_input("ชื่อลิงก์ (a-z, 0-9, -)", value=hosting.normalize_slug(default_title),
                              key=f"{key}-slug", help=f"ลิงก์จะเป็น {base_url()}/?site=ชื่อลิงก์")
         access, password, emails = access_inputs(key)
-        if st.button("🌐 เผยแพร่ตอนนี้", type="primary", key=f"{key}-go", width="stretch"):
+        if st.button("เผยแพร่ตอนนี้", icon=":material/public:", type="primary", key=f"{key}-go", width="stretch"):
             try:
                 site, owner_key = hosting.publish(html, title, slug, access, password, emails)
             except hosting.HostingError as exc:
-                st.error(str(exc))
+                st.error(str(exc), icon=":material/error:")
                 return
             state.owner_keys[site.slug] = owner_key
             agents.resolve_by_title(default_title)
-            agents.log_done("devops", f"เผยแพร่ {site.slug} ({hosting.ACCESS_LEVELS[access].split(' — ')[0]})")
-            st.success(f"✅ เว็บไซต์ออนไลน์แล้ว: {site_url(site.slug)}")
+            agents.log_done("devops", f"เผยแพร่ {site.slug} ({hosting.ACCESS_LEVELS[access]})")
+            st.success(site_url(site.slug), icon=":material/check_circle:", title="เว็บไซต์ออนไลน์แล้ว")
             st.code(site_url(site.slug), language=None)
-            st.markdown("**🔐 คีย์เจ้าของ** (ใช้แก้ไข/เปลี่ยนสิทธิ์/ลบเว็บ — เก็บไว้ให้ดี จะแสดงครั้งเดียว):")
+            st.markdown(":material/key: **คีย์เจ้าของ** ใช้แก้ไข เปลี่ยนสิทธิ์ หรือลบเว็บ "
+                        "จะแสดงครั้งเดียว เก็บไว้ให้ดี")
             st.code(owner_key, language=None)
-            st.link_button("เปิดเว็บไซต์ ↗", site_url(site.slug))
+            st.link_button("เปิดเว็บไซต์", site_url(site.slug), icon=":material/open_in_new:")
 
 
 def show_result(html: str, name: str, key: str, project=None, with_sources: bool = False) -> None:
-    st.subheader("🎉 เว็บของคุณพร้อมแล้ว")
-    d1, d2 = st.columns(2)
-    d1.download_button("⬇️ ดาวน์โหลด index.html", html, f"{name}.html", "text/html", width="stretch",
-                       key=f"{key}-dl-html")
-    if project is not None:
-        d2.download_button("📦 ดาวน์โหลดชุดพร้อมขึ้นโฮสต์ (.zip)", package_site(project, html, with_sources),
-                           f"{name}-webapp.zip", "application/zip", width="stretch", key=f"{key}-dl-zip")
-    tab_preview, tab_code = st.tabs(["👀 ตัวอย่างสด", "🧾 โค้ด HTML"])
+    st.subheader("เว็บของคุณพร้อมแล้ว", icon=":material/celebration:")
+    with st.container(horizontal=True):
+        st.download_button("ดาวน์โหลด index.html", html, f"{name}.html", "text/html",
+                           icon=":material/download:", key=f"{key}-dl-html")
+        if project is not None:
+            st.download_button("ดาวน์โหลดชุดพร้อมขึ้นโฮสต์ (.zip)", package_site(project, html, with_sources),
+                               f"{name}-webapp.zip", "application/zip", icon=":material/folder_zip:",
+                               key=f"{key}-dl-zip")
+    tab_preview, tab_code = st.tabs([":material/visibility: ตัวอย่างสด", ":material/code: โค้ด HTML"])
     with tab_preview:
         show_html(html)
     with tab_code:
@@ -155,8 +170,8 @@ def show_result(html: str, name: str, key: str, project=None, with_sources: bool
 def view_site(slug: str) -> None:
     site = hosting.get(slug)
     if site is None:
-        st.error("ไม่พบเว็บไซต์นี้ หรือถูกลบไปแล้ว")
-        st.link_button("🏭 ไปหน้าแรก ZipForge AI", base_url())
+        st.error("ลิงก์อาจพิมพ์ผิด หรือเจ้าของลบเว็บไปแล้ว", icon=":material/link_off:", title="ไม่พบเว็บไซต์นี้")
+        st.link_button("ไปหน้าแรก ZipForge AI", base_url(), icon=":material/home:")
         return
 
     owner = slug in state.owner_keys and hosting.is_owner(site, state.owner_keys[slug])
@@ -166,35 +181,35 @@ def view_site(slug: str) -> None:
     if not allowed and site.access == "password":
         allowed = slug in state.unlocked
         if not allowed:
-            st.markdown(f"## 🔑 {site.title}")
+            st.title(site.title, icon=":material/password:")
             with st.form("pw"):
                 pw = st.text_input("เว็บนี้ป้องกันด้วยรหัสผ่าน", type="password")
-                if st.form_submit_button("เข้าสู่เว็บไซต์", type="primary"):
+                if st.form_submit_button("เข้าสู่เว็บไซต์", type="primary", icon=":material/login:"):
                     if hosting.check_password(site, pw):
                         state.unlocked.add(slug)
                         st.rerun()
-                    st.error("รหัสผ่านไม่ถูกต้อง")
+                    st.error("รหัสผ่านไม่ถูกต้อง ลองอีกครั้ง", icon=":material/error:")
     elif not allowed and site.access == "emails":
         allowed = hosting.email_allowed(site, email)
         if not allowed:
-            st.markdown(f"## 📧 {site.title}")
-            st.info("เว็บนี้เปิดให้เฉพาะอีเมลที่เจ้าของอนุญาต")
+            st.title(site.title, icon=":material/alternate_email:")
+            st.caption("เว็บนี้เปิดให้เฉพาะอีเมลที่เจ้าของอนุญาต")
             if not login_configured():
-                st.warning("ระบบล็อกอินยังไม่ได้ตั้งค่า กรุณาติดต่อเจ้าของเว็บไซต์")
+                st.warning("กรุณาติดต่อเจ้าของเว็บไซต์", icon=":material/warning:", title="ระบบล็อกอินยังไม่พร้อม")
             elif email:
-                st.error(f"บัญชี {email} ไม่มีสิทธิ์เข้าถึงเว็บนี้")
-                st.button("ออกจากระบบ", on_click=st.logout)
+                st.error(f"บัญชี {email} ไม่มีสิทธิ์เข้าถึงเว็บนี้", icon=":material/block:")
+                st.button("ออกจากระบบ", on_click=st.logout, icon=":material/logout:")
             else:
-                st.button("🔐 ล็อกอินเพื่อเข้าชม", type="primary", on_click=st.login)
+                st.button("ล็อกอินเพื่อเข้าชม", type="primary", on_click=st.login, icon=":material/login:")
     elif not allowed:  # private
-        st.markdown(f"## 🔒 {site.title}")
+        st.title(site.title, icon=":material/lock:")
         with st.form("owner"):
-            k = st.text_input("เว็บนี้เป็นแบบส่วนตัว — ใส่คีย์เจ้าของเพื่อเปิด", type="password")
-            if st.form_submit_button("เปิด", type="primary"):
+            k = st.text_input("เว็บนี้เป็นแบบส่วนตัว ใส่คีย์เจ้าของเพื่อเปิด", type="password")
+            if st.form_submit_button("เปิดเว็บไซต์", type="primary", icon=":material/key:"):
                 if hosting.is_owner(site, k):
                     state.owner_keys[slug] = k
                     st.rerun()
-                st.error("คีย์ไม่ถูกต้อง")
+                st.error("คีย์ไม่ถูกต้อง", icon=":material/error:")
 
     if not allowed:
         return
@@ -202,7 +217,7 @@ def view_site(slug: str) -> None:
     if f"viewed-{slug}" not in state:
         state[f"viewed-{slug}"] = True
         hosting.record_view(site)
-    # full-screen: hide Streamlit chrome and stretch the iframe to the window
+    # Full-screen viewer: the published site replaces the app chrome entirely.
     st.markdown("""<style>
       header, [data-testid="stSidebar"], [data-testid="stToolbar"], footer { display:none !important; }
       .block-container, [data-testid="stMainBlockContainer"] { padding:0 !important; max-width:100% !important; }
@@ -219,55 +234,56 @@ if site_param:
 
 # ============================================================================= sidebar
 with st.sidebar:
-    st.markdown("## 🏭 ZipForge AI")
+    st.header("ZipForge AI", icon=":material/factory:")
     st.caption("บริษัท AI ที่เปลี่ยนไฟล์ของคุณให้เป็นเว็บไซต์จริง")
-    st.markdown("### 👥 ทีมงาน AI ของเรา")
-    for a in agents.AGENTS:
-        st.markdown(f"{a['emoji']} **{a['name']}** ({a['role']}) — {a['desc']}")
 
-    st.divider()
-    st.markdown("### 🔑 AI Engine (Claude)")
+    st.subheader("ทีมงาน", icon=":material/groups:")
+    for a in agents.AGENTS:
+        st.markdown(f"{AGENT_ICONS[a['id']]} **{a['name']}** · {a['role']}  \n"
+                    f":gray[{a['desc']}]")
+
+    st.subheader("AI engine", icon=":material/key:")
     api_key = secret("ANTHROPIC_API_KEY")
     if api_key:
-        st.success("เชื่อมต่อ API key แล้ว")
+        st.badge("เชื่อมต่อ Claude แล้ว", icon=":material/check:", color="green")
     else:
         api_key = st.text_input("Anthropic API key", type="password",
-                                help="ใช้สำหรับโหมด AI เท่านั้น — โหมดอัตโนมัติใช้ได้ฟรีโดยไม่ต้องมี key")
+                                help="ใช้สำหรับโหมด AI เท่านั้น โหมดอัตโนมัติใช้ได้ฟรีโดยไม่ต้องมี key")
     effort = st.select_slider("ความละเอียดของ AI", options=["low", "medium", "high", "xhigh"], value="high",
-                              help="สูง = คุณภาพดีขึ้นแต่ใช้เวลาและค่าใช้จ่ายมากขึ้น")
-    st.divider()
-    st.download_button("📦 ดาวน์โหลด ZIP ตัวอย่าง", sample_zip(), "sample-shop.zip", "application/zip",
-                       width="stretch")
+                              help="สูงขึ้นได้งานละเอียดขึ้น แต่ใช้เวลาและค่าใช้จ่ายมากขึ้น")
+    st.space("small")
+    st.download_button("ดาวน์โหลด ZIP ตัวอย่าง", sample_zip(), "sample-shop.zip", "application/zip",
+                       icon=":material/download:", width="stretch")
 
 
 # ============================================================================= hero
-st.title("🏭 ZipForge AI")
-st.markdown("#### อัปโหลดไฟล์ ZIP หรือเล่าว่าอยากได้เว็บแบบไหน — ทีม AI ของเราจะสร้าง HTML "
-            "และ **นำขึ้นเว็บไซต์จริง** พร้อมกำหนดได้ว่าใครเข้าถึงได้บ้าง")
+st.title("ZipForge AI", icon=":material/factory:")
+st.markdown("อัปโหลดไฟล์ ZIP หรือเล่าว่าอยากได้เว็บแบบไหน ทีม AI จะสร้าง HTML "
+            "นำขึ้นเว็บไซต์จริง และให้คุณกำหนดได้ว่าใครเข้าถึงได้บ้าง")
+with st.container(horizontal=True, gap="small"):
+    st.badge("ส่งไฟล์หรือไอเดีย", icon=":material/upload:", color="primary")
+    st.badge("AI สร้าง HTML", icon=":material/auto_awesome:", color="primary")
+    st.badge("เผยแพร่ได้ลิงก์จริง", icon=":material/public:", color="primary")
+    st.badge("กำหนดสิทธิ์ผู้เข้าชม", icon=":material/shield_person:", color="primary")
 
-c1, c2, c3, c4 = st.columns(4)
-c1.info("**1. ส่งไฟล์/ไอเดีย** 📤\n\nZIP เว็บไซต์ ข้อมูล เอกสาร รูปภาพ โค้ด หรือแค่คำอธิบาย")
-c2.info("**2. AI สร้าง HTML** 🤖\n\nได้เว็บไฟล์เดียวที่ทำงานได้จริง")
-c3.info("**3. เผยแพร่** 🌐\n\nได้ลิงก์เว็บไซต์จริงทันที")
-c4.info("**4. ควบคุมสิทธิ์** 🔐\n\nสาธารณะ / รหัสผ่าน / เฉพาะอีเมล / ส่วนตัว")
-
-tab_office, tab_zip, tab_prompt, tab_sites = st.tabs(
-    ["🏢 ออฟฟิศ AI", "📦 ZIP → เว็บแอป", "✨ สร้าง HTML ด้วย AI", "🌐 เว็บไซต์ของฉัน"])
+tab_office, tab_zip, tab_prompt, tab_sites = st.tabs([
+    ":material/apartment: ออฟฟิศ AI", ":material/folder_zip: ZIP เป็นเว็บแอป",
+    ":material/auto_awesome: สร้าง HTML ด้วย AI", ":material/public: เว็บไซต์ของฉัน"])
 
 
 # ============================================================================= tab: zip
 def say(agent_id: str, text: str) -> None:
     a = agents.AGENT_BY_ID[agent_id]
-    st.write(f"{a['emoji']} **{a['name']}** ({a['role']}): {text}")
+    st.markdown(f"{AGENT_ICONS[agent_id]} **{a['name']}** · {a['role']}: {text}")
 
 
 def run_build(use_ai: bool, project, analysis, instructions: str) -> str:
     name = project.name
-    say("analyst", f"วิเคราะห์ {len(project.files)} ไฟล์ — {analysis.label}")
+    say("analyst", f"วิเคราะห์ {len(project.files)} ไฟล์ พบว่าเป็น{analysis.label}")
     agents.log_done("analyst", f"วิเคราะห์ {name}")
     say("architect", "วางแผน" + ("ให้ AI เขียนแอปใหม่" if use_ai else "ใช้เทมเพลตที่เหมาะกับประเภทไฟล์"))
     agents.log_done("architect", f"วางแผนเว็บ {name}")
-    say("developer", "กำลังสร้างเว็บแอป...")
+    say("developer", "กำลังสร้างเว็บแอป")
     dev_task = agents.add_task("developer", f"สร้างเว็บ {name}")
     started = time.time()
     try:
@@ -276,7 +292,7 @@ def run_build(use_ai: bool, project, analysis, instructions: str) -> str:
 
             progress = st.empty()
             html = generate_app(api_key, project, analysis, instructions, effort,
-                                on_progress=lambda n: progress.caption(f"✍️ เขียนโค้ดแล้ว {n:,} ตัวอักษร..."))
+                                on_progress=lambda n: progress.caption(f"เขียนโค้ดแล้ว {n:,} ตัวอักษร"))
         else:
             html = build_auto(project, analysis)
     finally:
@@ -284,12 +300,13 @@ def run_build(use_ai: bool, project, analysis, instructions: str) -> str:
     say("qa", f"ตรวจสอบแล้ว ({len(html) / 1024:,.1f} KB, {time.time() - started:.1f} วินาที)")
     agents.log_done("qa", f"ตรวจสอบ {name}")
     agents.submit_for_approval(name, html)
-    say("secretary", "ส่งงานเข้ากล่องอนุมัติแล้ว — อนุมัติได้ที่แท็บ 🏢 ออฟฟิศ AI หรือเผยแพร่ด้านล่าง")
+    say("secretary", "ส่งงานเข้ากล่องอนุมัติแล้ว อนุมัติได้ที่แท็บออฟฟิศ AI หรือเผยแพร่ด้านล่าง")
     return html
 
 
 with tab_zip:
-    uploaded = st.file_uploader("📤 อัปโหลดไฟล์ ZIP", type=["zip"])
+    uploaded = st.file_uploader("อัปโหลดไฟล์ ZIP", type=["zip"],
+                                help="เว็บไซต์ ข้อมูล CSV/Excel เอกสาร รูปภาพ หรือซอร์สโค้ด ขนาดไม่เกิน 200 MB")
     project = analysis = None
     if uploaded:
         raw = uploaded.getvalue()
@@ -297,48 +314,52 @@ with tab_zip:
         try:
             project = load_zip(raw, uploaded.name)
         except ZipError as exc:
-            st.error(f"❌ {exc}")
+            st.error(str(exc), icon=":material/error:", title="เปิดไฟล์ ZIP ไม่ได้")
+    else:
+        st.caption("ยังไม่มีไฟล์? กด **ดาวน์โหลด ZIP ตัวอย่าง** ที่แถบซ้ายแล้วอัปโหลดกลับมาเพื่อทดลองได้เลย")
 
     if project:
         analysis = analyze(project)
-        st.subheader("🕵️ รายงานการวิเคราะห์")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("ชื่อโปรเจกต์", project.name)
-        m2.metric("จำนวนไฟล์", f"{len(project.files):,}")
-        m3.metric("ขนาดรวม", f"{analysis.total_bytes / 1024:,.1f} KB")
-        m4.metric("ประเภท", analysis.label.split(" ", 1)[0])
-        st.markdown(f"**ประเภทที่ตรวจพบ:** {analysis.label}")
+        st.subheader("รายงานการวิเคราะห์", icon=":material/query_stats:")
+        with st.container(horizontal=True):
+            st.metric("ชื่อโปรเจกต์", project.name, border=True)
+            st.metric("จำนวนไฟล์", f"{len(project.files):,}", border=True)
+            st.metric("ขนาดรวม", f"{analysis.total_bytes / 1024:,.1f} KB", border=True)
+        st.markdown(f"{KIND_ICONS[analysis.kind]} ประเภทที่ตรวจพบ: **{analysis.label}**")
         for note in analysis.notes:
             st.markdown(f"- {note}")
-        with st.expander("📁 ดูรายการไฟล์ทั้งหมด"):
+        with st.expander("ดูรายการไฟล์ทั้งหมด", icon=":material/folder_open:"):
             st.code("\n".join(sorted(project.files)), language=None)
 
-        st.subheader("⚙️ เลือกวิธีสร้างเว็บแอป")
-        mode = st.radio(
-            "โหมด",
-            ["⚡ อัตโนมัติ (ฟรี เร็ว ไม่ต้องใช้ API key)", "🤖 AI สร้างให้ (Claude เขียนเว็บแอปใหม่จากไฟล์ของคุณ)"],
-            index=1 if (analysis.kind == "code" and api_key) else 0,
+        st.subheader("เลือกวิธีสร้างเว็บแอป", icon=":material/tune:")
+        mode = st.segmented_control(
+            "โหมด", ["auto", "ai"], required=True,
+            default="ai" if (analysis.kind == "code" and api_key) else "auto",
+            format_func={"auto": ":material/bolt: อัตโนมัติ", "ai": ":material/auto_awesome: AI สร้างให้"}.get,
             label_visibility="collapsed",
         )
-        use_ai = mode.startswith("🤖")
+        use_ai = mode == "ai"
+        st.caption("Claude เขียนเว็บแอปใหม่จากไฟล์ของคุณ ต้องใช้ API key" if use_ai
+                   else "ฟรีและเร็ว ไม่ต้องใช้ API key ใช้เทมเพลตตามประเภทไฟล์")
         instructions = ""
         if use_ai:
             instructions = st.text_area(
                 "บอกสิ่งที่คุณต้องการ (ไม่บังคับ)",
-                placeholder="เช่น: ทำเป็นแดชบอร์ดยอดขาย มีกราฟรายเดือน ธีมสีเขียว และปุ่มส่งออก CSV",
+                placeholder="เช่น ทำเป็นแดชบอร์ดยอดขาย มีกราฟรายเดือน ธีมสีเขียว และปุ่มส่งออก CSV",
             )
             if not api_key:
-                st.warning("ต้องใส่ Anthropic API key ที่แถบด้านซ้ายเพื่อใช้โหมด AI")
+                st.warning("ใส่ Anthropic API key ที่แถบด้านซ้ายเพื่อใช้โหมด AI", icon=":material/key:")
 
-        if st.button("🚀 สร้างเว็บแอป", type="primary", width="stretch", disabled=use_ai and not api_key):
-            with st.status("ทีม AI กำลังทำงาน...", expanded=True) as status:
+        if st.button("สร้างเว็บแอป", icon=":material/rocket_launch:", type="primary", width="stretch",
+                     disabled=use_ai and not api_key):
+            with st.status("ทีม AI กำลังทำงาน", expanded=True) as status:
                 try:
                     html = run_build(use_ai, project, analysis, instructions)
                     state["zip_result"] = {"digest": digest, "html": html, "ai": use_ai}
-                    status.update(label="✅ สร้างเว็บแอปสำเร็จ!", state="complete", expanded=False)
+                    status.update(label="สร้างเว็บแอปสำเร็จ", state="complete", expanded=False)
                 except Exception as exc:  # noqa: BLE001 - show any failure to the user
-                    status.update(label="❌ เกิดข้อผิดพลาด", state="error")
-                    st.error(f"{type(exc).__name__}: {exc}")
+                    status.update(label="สร้างไม่สำเร็จ", state="error")
+                    st.error(f"{type(exc).__name__}: {exc}", icon=":material/error:")
 
         result = state.get("zip_result")
         if result and result["digest"] == digest:
@@ -347,42 +368,41 @@ with tab_zip:
 
 # ============================================================================= tab: prompt
 with tab_prompt:
-    st.markdown("เล่าว่าอยากได้เว็บแบบไหน แล้ว AI จะเขียน **HTML ทั้งหน้า** ให้ทันที — ไม่ต้องมีไฟล์")
+    st.markdown("เล่าว่าอยากได้เว็บแบบไหน แล้ว AI จะเขียน **HTML ทั้งหน้า** ให้ทันที ไม่ต้องมีไฟล์")
     examples = {
-        "—": "",
         "ร้านกาแฟ": "เว็บไซต์ร้านกาแฟชื่อ 'บ้านกาแฟ' มีเมนูพร้อมราคา รูปบรรยากาศ เวลาเปิดปิด แผนที่ และปุ่มสั่งผ่าน LINE",
         "พอร์ตโฟลิโอ": "เว็บพอร์ตโฟลิโอส่วนตัวของนักออกแบบกราฟิก มีผลงาน 6 ชิ้น ประวัติ ทักษะ และฟอร์มติดต่อ",
         "แอปรายรับรายจ่าย": "แอปบันทึกรายรับรายจ่าย เพิ่ม/ลบรายการ สรุปยอดรายเดือนเป็นกราฟ และบันทึกข้อมูลไว้ในเบราว์เซอร์",
     }
-    pick = st.selectbox("ตัวอย่างไอเดีย", list(examples))
-    description = st.text_area("คำอธิบายเว็บไซต์", value=examples[pick], height=140,
-                               placeholder="เช่น: เว็บแนะนำบริษัท มีหน้าบริการ ราคา รีวิวลูกค้า และฟอร์มติดต่อ ธีมสีน้ำเงิน")
+    pick = st.pills("เริ่มจากไอเดียตัวอย่าง", list(examples))
+    description = st.text_area("คำอธิบายเว็บไซต์", value=examples.get(pick, ""), height=140,
+                               placeholder="เช่น เว็บแนะนำบริษัท มีหน้าบริการ ราคา รีวิวลูกค้า และฟอร์มติดต่อ ธีมสีน้ำเงิน")
     site_name = st.text_input("ชื่อโปรเจกต์", value="my-website")
     if not api_key:
-        st.warning("ต้องใส่ Anthropic API key ที่แถบด้านซ้ายเพื่อใช้ฟีเจอร์นี้")
-    if st.button("✨ สร้าง HTML", type="primary", width="stretch",
+        st.warning("ใส่ Anthropic API key ที่แถบด้านซ้ายเพื่อใช้ฟีเจอร์นี้", icon=":material/key:")
+    if st.button("สร้าง HTML", icon=":material/auto_awesome:", type="primary", width="stretch",
                  disabled=not (api_key and description.strip())):
-        with st.status("ทีม AI กำลังเขียนเว็บไซต์...", expanded=True) as status:
+        with st.status("ทีม AI กำลังเขียนเว็บไซต์", expanded=True) as status:
             try:
                 from zipforge.ai import generate_from_prompt
 
                 progress = st.empty()
                 prompt_name = hosting.normalize_slug(site_name) or "my-website"
-                say("developer", "กำลังเขียนเว็บไซต์จากคำอธิบาย...")
+                say("developer", "กำลังเขียนเว็บไซต์จากคำอธิบาย")
                 dev_task = agents.add_task("developer", f"เขียนเว็บ {prompt_name}")
                 try:
                     html = generate_from_prompt(
                         api_key, description, effort,
-                        on_progress=lambda n: progress.caption(f"✍️ เขียนโค้ดแล้ว {n:,} ตัวอักษร..."))
+                        on_progress=lambda n: progress.caption(f"เขียนโค้ดแล้ว {n:,} ตัวอักษร"))
                 finally:
                     agents.set_status(dev_task, "done")
                 agents.log_done("qa", f"ตรวจสอบ {prompt_name}")
                 agents.submit_for_approval(prompt_name, html)
                 state["prompt_result"] = {"html": html, "name": site_name}
-                status.update(label="✅ สร้าง HTML สำเร็จ!", state="complete", expanded=False)
+                status.update(label="สร้าง HTML สำเร็จ", state="complete", expanded=False)
             except Exception as exc:  # noqa: BLE001
-                status.update(label="❌ เกิดข้อผิดพลาด", state="error")
-                st.error(f"{type(exc).__name__}: {exc}")
+                status.update(label="สร้างไม่สำเร็จ", state="error")
+                st.error(f"{type(exc).__name__}: {exc}", icon=":material/error:")
     if state.get("prompt_result"):
         res = state["prompt_result"]
         show_result(res["html"], hosting.normalize_slug(res["name"]) or "my-website", "prompt")
@@ -390,55 +410,42 @@ with tab_prompt:
 
 # ============================================================================= tab: my sites
 def manage_site(site: hosting.Site, owner_key: str) -> None:
-    with st.expander(f"{hosting.ACCESS_LEVELS[site.access].split(' ', 1)[0]} **{site.title}** — "
-                     f"`{site.slug}` · 👁️ {site.views} ครั้ง"):
+    with st.expander(f"**{site.title}** · `{site.slug}` · {hosting.ACCESS_LEVELS[site.access]} · "
+                     f"เข้าชม {site.views:,} ครั้ง", icon=ACCESS_ICONS[site.access]):
         st.code(site_url(site.slug), language=None)
-        b1, b2 = st.columns(2)
-        b1.link_button("เปิดเว็บไซต์ ↗", site_url(site.slug), width="stretch")
-        b2.download_button("⬇️ ดาวน์โหลด HTML", hosting.read_html(site), f"{site.slug}.html", "text/html",
-                           width="stretch", key=f"dl-{site.slug}")
+        with st.container(horizontal=True):
+            st.link_button("เปิดเว็บไซต์", site_url(site.slug), icon=":material/open_in_new:")
+            st.download_button("ดาวน์โหลด HTML", hosting.read_html(site), f"{site.slug}.html", "text/html",
+                               icon=":material/download:", key=f"dl-{site.slug}")
         st.caption(f"สร้างเมื่อ {datetime.fromtimestamp(site.created):%d/%m/%Y %H:%M} · "
                    f"แก้ไขล่าสุด {datetime.fromtimestamp(site.updated):%d/%m/%Y %H:%M}")
 
-        st.markdown("##### 🔐 สิทธิ์การเข้าถึง")
+        st.markdown("**สิทธิ์การเข้าถึง**")
         access, password, emails = access_inputs(f"m-{site.slug}", site)
-        if st.button("💾 บันทึกสิทธิ์", key=f"save-{site.slug}"):
+        if st.button("บันทึกสิทธิ์", icon=":material/save:", key=f"save-{site.slug}"):
             try:
                 hosting.update_access(site, access, password, emails)
-                st.success("บันทึกแล้ว")
+                st.toast("บันทึกสิทธิ์แล้ว", icon=":material/check_circle:")
                 st.rerun()
             except hosting.HostingError as exc:
-                st.error(str(exc))
+                st.error(str(exc), icon=":material/error:")
 
-        st.markdown("##### ♻️ อัปเดตเนื้อหา")
+        st.markdown("**อัปเดตเนื้อหา**")
         new_file = st.file_uploader("อัปโหลดไฟล์ HTML ใหม่แทนของเดิม", type=["html", "htm"], key=f"up-{site.slug}")
-        if new_file and st.button("อัปเดตเว็บไซต์", key=f"upd-{site.slug}"):
+        if new_file and st.button("อัปเดตเว็บไซต์", icon=":material/sync:", key=f"upd-{site.slug}"):
             hosting.update_html(site, new_file.getvalue().decode("utf-8", errors="replace"))
-            st.success("อัปเดตแล้ว")
+            st.toast("อัปเดตเว็บไซต์แล้ว", icon=":material/check_circle:")
 
-        st.markdown("##### 🗑️ ลบเว็บไซต์")
-        if st.checkbox("ยืนยันว่าต้องการลบถาวร", key=f"cf-{site.slug}") and \
-                st.button("ลบเว็บไซต์นี้", type="primary", key=f"del-{site.slug}"):
+        st.markdown("**ลบเว็บไซต์**")
+        confirm = st.checkbox("ยืนยันว่าต้องการลบถาวร", key=f"cf-{site.slug}")
+        if st.button("ลบเว็บไซต์นี้", icon=":material/delete:", key=f"del-{site.slug}", disabled=not confirm):
             hosting.delete(site)
             state.owner_keys.pop(site.slug, None)
             st.rerun()
 
 
 with tab_sites:
-    st.markdown("จัดการเว็บไซต์ที่คุณเผยแพร่: เปลี่ยนสิทธิ์ใครเข้าได้ อัปเดตเนื้อหา หรือลบ")
-
-    with st.form("claim"):
-        st.markdown("**🔑 เปิดจัดการเว็บด้วยคีย์เจ้าของ**")
-        f1, f2 = st.columns(2)
-        claim_slug = f1.text_input("ชื่อลิงก์ของเว็บ")
-        claim_key = f2.text_input("คีย์เจ้าของ", type="password")
-        if st.form_submit_button("เปิดจัดการ"):
-            site = hosting.get(hosting.normalize_slug(claim_slug))
-            if site and hosting.is_owner(site, claim_key):
-                state.owner_keys[site.slug] = claim_key
-                st.success(f"เพิ่ม {site.title} แล้ว")
-            else:
-                st.error("ชื่อลิงก์หรือคีย์ไม่ถูกต้อง")
+    st.markdown("จัดการเว็บไซต์ที่คุณเผยแพร่ เปลี่ยนสิทธิ์ผู้เข้าชม อัปเดตเนื้อหา หรือลบ")
 
     mine = [(hosting.get(s), k) for s, k in state.owner_keys.items()]
     mine = [(s, k) for s, k in mine if s and hosting.is_owner(s, k)]
@@ -446,73 +453,89 @@ with tab_sites:
         for site, key in mine:
             manage_site(site, key)
     else:
-        st.info("ยังไม่มีเว็บไซต์ในเซสชันนี้ — สร้างเว็บจากแท็บแรกแล้วกด 🌐 เผยแพร่ หรือใช้คีย์เจ้าของด้านบน")
+        st.caption("ยังไม่มีเว็บไซต์ในเซสชันนี้ สร้างเว็บแล้วกด **เผยแพร่ตอนนี้** "
+                   "หรือเปิดเว็บเดิมด้วยคีย์เจ้าของด้านล่าง")
+
+    with st.form("claim"):
+        st.markdown(":material/key: **เปิดจัดการเว็บด้วยคีย์เจ้าของ**")
+        with st.container(horizontal=True, vertical_alignment="bottom"):
+            claim_slug = st.text_input("ชื่อลิงก์ของเว็บ")
+            claim_key = st.text_input("คีย์เจ้าของ", type="password")
+            submitted = st.form_submit_button("เปิดจัดการ", icon=":material/login:")
+        if submitted:
+            site = hosting.get(hosting.normalize_slug(claim_slug))
+            if site and hosting.is_owner(site, claim_key):
+                state.owner_keys[site.slug] = claim_key
+                st.rerun()
+            else:
+                st.error("ชื่อลิงก์หรือคีย์ไม่ถูกต้อง", icon=":material/error:")
 
     admin_pw = secret("ZIPFORGE_ADMIN_PASSWORD")
     if admin_pw:
-        with st.expander("🏢 ผู้ดูแลบริษัท (ดูเว็บไซต์ทั้งหมด)"):
+        with st.expander("ผู้ดูแลบริษัท: ดูเว็บไซต์ทั้งหมด", icon=":material/admin_panel_settings:"):
             if st.text_input("รหัสผู้ดูแล", type="password", key="admin") == admin_pw:
                 sites = hosting.list_sites()
                 st.metric("เว็บไซต์ทั้งหมด", len(sites))
                 st.dataframe([{"ชื่อ": s.title, "ลิงก์": site_url(s.slug), "สิทธิ์": hosting.ACCESS_LEVELS[s.access],
                                "เข้าชม": s.views, "อัปเดต": datetime.fromtimestamp(s.updated)} for s in sites],
-                             width="stretch")
+                             column_config={"ลิงก์": st.column_config.LinkColumn()}, width="stretch")
 
 
 # ============================================================================= tab: office (rendered last so it reflects work done in this run)
 with tab_office:
     team = agents.agent_states()
     st.iframe("data:text/html;charset=utf-8;base64," +
-              base64.b64encode(render_office(team).encode()).decode(), height=620)
-    st.caption("🖱️ ลากเพื่อหมุน · เลื่อนเพื่อซูม · คลิกที่ตัวละครเพื่อดูว่ากำลังทำอะไร")
+              base64.b64encode(render_office(team).encode()).decode(), height=620,
+              alt="ออฟฟิศ 3D ของทีม AI แสดงสถานะการทำงานของแต่ละคน")
+    st.caption(":material/touch_app: ลากเพื่อหมุน · เลื่อนเพื่อซูม · คลิกที่ตัวละครเพื่อดูว่ากำลังทำอะไร")
 
-    left, right = st.columns([3, 2])
+    left, right = st.columns([3, 2], gap="large")
     with left:
-        st.markdown("### 📋 รายงานจากเลขา (24 ชม.ล่าสุด)")
+        st.subheader("รายงานจากเลขา", icon=":material/assignment:", help="สรุปงาน 24 ชั่วโมงล่าสุด")
         rep = agents.daily_report()
-        r1, r2, r3, r4 = st.columns(4)
-        r1.metric("งานที่เสร็จ", rep["tasks_today"])
-        r2.metric("เว็บที่สร้าง", rep["builds_today"])
-        r3.metric("เผยแพร่ใหม่", rep["published_today"])
-        r4.metric("ผู้เข้าชมรวม", f"{rep['views']:,}")
+        with st.container(horizontal=True):
+            st.metric("งานที่เสร็จ", rep["tasks_today"], border=True)
+            st.metric("เว็บที่สร้าง", rep["builds_today"], border=True)
+            st.metric("เผยแพร่ใหม่", rep["published_today"], border=True)
+            st.metric("ผู้เข้าชมรวม", f"{rep['views']:,}", border=True)
         busy = [a for a in team if a["status"] != "idle"]
-        summary = (f"วันนี้ทีมทำงานเสร็จ {rep['tasks_today']} งาน มีเว็บออนไลน์ทั้งหมด {rep['sites']} เว็บ")
+        summary = f"วันนี้ทีมทำงานเสร็จ {rep['tasks_today']} งาน มีเว็บออนไลน์ทั้งหมด {rep['sites']} เว็บ"
         summary += f" และมี **{rep['waiting']} งานรออนุมัติ** จากคุณ" if rep["waiting"] else " ไม่มีงานค้างอนุมัติ"
-        st.info("💬 **มิว (เลขา):** " + summary + ("" if busy else " — ตอนนี้ทุกคนว่าง พร้อมรับงานใหม่ค่ะ"))
+        st.info(summary + ("" if busy else " ตอนนี้ทุกคนว่าง พร้อมรับงานใหม่ค่ะ"),
+                icon=":material/chat:", title="มิว (เลขา)")
 
-        st.markdown("### 👥 ทีม")
+        st.subheader("ทีม", icon=":material/groups:")
         for a in team:
-            label, color = agents.STATUS[a["status"]]
-            st.markdown(f"{a['emoji']} **{a['name']}** · {a['role']} — "
-                        f"<span style='color:{color}'>● {label}</span> · {a['task']}",
-                        unsafe_allow_html=True)
+            label, _ = agents.STATUS[a["status"]]
+            st.markdown(f"{AGENT_ICONS[a['id']]} **{a['name']}** · {a['role']} "
+                        f":{STATUS_BADGE[a['status']]}-badge[{label}]  \n:gray[{a['task']}]")
 
     with right:
-        st.markdown("### 📥 กล่องอนุมัติ")
+        st.subheader("กล่องอนุมัติ", icon=":material/inbox:")
         items = agents.inbox()
         if not items:
-            st.success("ไม่มีงานรออนุมัติ 🎉")
+            st.caption(":material/done_all: ไม่มีงานรออนุมัติ")
         for t in reversed(items):
             with st.container(border=True):
                 title = t["title"].split(": ", 1)[-1]
-                st.markdown(f"**{title}**")
-                st.caption(f"ส่งเมื่อ {datetime.fromtimestamp(t['created']):%d/%m %H:%M}")
+                st.markdown(f"**{title}**  \n:gray[ส่งเมื่อ {datetime.fromtimestamp(t['created']):%d/%m %H:%M}]")
                 html_doc = agents.pending_html(t["id"])
-                a1, a2 = st.columns(2)
-                if a1.button("✅ อนุมัติ+เผยแพร่", key=f"ap-{t['id']}", type="primary", disabled=html_doc is None):
-                    site, owner_key = hosting.publish(html_doc, title, title, "public")
-                    state.owner_keys[site.slug] = owner_key
-                    agents.resolve(t["id"], True)
-                    agents.log_done("devops", f"เผยแพร่ {site.slug} (สาธารณะ)")
-                    state["approved_msg"] = (site_url(site.slug), owner_key)
-                    st.rerun()
-                if a2.button("🗑️ ปฏิเสธ", key=f"rj-{t['id']}"):
-                    agents.resolve(t["id"], False)
-                    st.rerun()
+                with st.container(horizontal=True):
+                    if st.button("อนุมัติและเผยแพร่", icon=":material/check:", key=f"ap-{t['id']}", type="primary",
+                                 disabled=html_doc is None):
+                        site, owner_key = hosting.publish(html_doc, title, title, "public")
+                        state.owner_keys[site.slug] = owner_key
+                        agents.resolve(t["id"], True)
+                        agents.log_done("devops", f"เผยแพร่ {site.slug} (สาธารณะ)")
+                        state["approved_msg"] = (site_url(site.slug), owner_key)
+                        st.rerun()
+                    if st.button("ปฏิเสธ", icon=":material/close:", key=f"rj-{t['id']}"):
+                        agents.resolve(t["id"], False)
+                        st.rerun()
         if state.get("approved_msg"):
             url, owner_key = state["approved_msg"]
-            st.success(f"เผยแพร่แล้ว (สาธารณะ): {url}")
-            st.markdown("🔐 คีย์เจ้าของ (เปลี่ยนสิทธิ์ได้ที่แท็บ 🌐 เว็บไซต์ของฉัน):")
+            st.success(url, icon=":material/check_circle:", title="เผยแพร่แล้ว (สาธารณะ)")
+            st.markdown(":material/key: คีย์เจ้าของ เปลี่ยนสิทธิ์ได้ที่แท็บเว็บไซต์ของฉัน")
             st.code(owner_key, language=None)
-        st.caption("งานที่สร้างเสร็จจะเข้ามารอที่นี่ อนุมัติแล้วจะเผยแพร่แบบสาธารณะทันที "
+        st.caption("งานที่สร้างเสร็จจะมารอที่นี่ อนุมัติแล้วจะเผยแพร่แบบสาธารณะทันที "
                    "หรือเลือกสิทธิ์อื่นได้จากปุ่มเผยแพร่ใต้ผลงาน")

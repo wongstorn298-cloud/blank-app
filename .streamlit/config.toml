@@ -1,0 +1,23 @@
+# ZipForge AI brand theme — matches the pink/cream palette of the 3D office.
+[theme]
+base = "light"
+primaryColor = "#c2185b"              # white button text passes WCAG AA (5.9:1)
+backgroundColor = "#fffaf7"
+secondaryBackgroundColor = "#fbeef0"
+textColor = "#2e2a3f"
+borderColor = "#efdde2"
+linkColor = "#ad1457"
+codeBackgroundColor = "#f8eef0"
+font = "'IBM Plex Sans Thai':https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap"
+headingFont = "Prompt:https://fonts.googleapis.com/css2?family=Prompt:wght@500;600&display=swap"
+headingFontWeights = [600, 600, 600, 500, 500, 500]
+baseRadius = "0.75rem"
+buttonRadius = "full"
+showWidgetBorder = true
+showSidebarBorder = false
+linkUnderline = false
+chartCategoricalColors = ["#c2185b", "#5c6bc0", "#26a69a", "#ffa726", "#8e24aa", "#ef5350", "#78909c"]
+
+[theme.sidebar]
+backgroundColor = "#fdf0f2"
+secondaryBackgroundColor = "#fffaf7"

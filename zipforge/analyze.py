@@ -19,11 +19,11 @@ CODE_EXT = {
 }
 
 KINDS = {
-    "static": "🌐 เว็บไซต์ HTML/CSS/JS",
-    "data": "📊 ไฟล์ข้อมูล (CSV / Excel / JSON)",
-    "docs": "📚 เอกสาร Markdown / ข้อความ",
-    "gallery": "🖼️ รูปภาพ",
-    "code": "💻 ซอร์สโค้ด (ต้องให้ AI แปลงเป็นเว็บ)",
+    "static": "เว็บไซต์ HTML/CSS/JS",
+    "data": "ไฟล์ข้อมูล (CSV / Excel / JSON)",
+    "docs": "เอกสาร Markdown / ข้อความ",
+    "gallery": "รูปภาพ",
+    "code": "ซอร์สโค้ด",
 }
 
 

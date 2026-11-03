@@ -10,19 +10,14 @@ OFFICE_HTML = r"""<!doctype html>
 <html lang="th"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Office</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..24,500,1,0&display=swap">
 <style>
-  :root { --pink:#e8618c; --glass:rgba(255,255,255,.72); --ink:#3b3550; }
+  :root { --pink:#c2185b; --glass:rgba(255,255,255,.92); --ink:#2e2a3f; }
   html, body { margin:0; height:100%; overflow:hidden;
-    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif; color:var(--ink); }
+    font-family: "IBM Plex Sans Thai", system-ui, sans-serif; color:var(--ink); }
+  .ms { font-family:"Material Symbols Rounded"; font-size:18px; line-height:1; vertical-align:-4px; font-weight:normal; }
   body { background: radial-gradient(120% 90% at 50% 0%, #fff4ec 0%, #fde6e4 45%, #e7e3fb 100%); transition: background .8s; }
   body.night { background: radial-gradient(120% 90% at 50% 0%, #2a2f5c 0%, #171b3a 55%, #0d1026 100%); }
-  #stars { position:absolute; inset:0; opacity:0; transition:opacity .8s; pointer-events:none;
-    background-image: radial-gradient(1.5px 1.5px at 10% 20%, #fff 50%, transparent 51%),
-      radial-gradient(1px 1px at 25% 8%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 40% 15%, #fff 50%, transparent 51%),
-      radial-gradient(1px 1px at 60% 6%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 78% 18%, #fff 50%, transparent 51%),
-      radial-gradient(1px 1px at 90% 10%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 5% 45%, #fff 50%, transparent 51%),
-      radial-gradient(1px 1px at 95% 40%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 70% 30%, #fff 50%, transparent 51%); }
-  body.night #stars { opacity:.9; }
   #c { position:absolute; inset:0; display:block; width:100%; height:100%; }
   .label { position:absolute; transform:translate(-50%,-100%); pointer-events:none; white-space:nowrap;
     background:var(--glass); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
@@ -58,15 +53,14 @@ OFFICE_HTML = r"""<!doctype html>
     .btns button { padding:8px 12px; font-size:13px; } }
 </style></head>
 <body>
-<div id="stars"></div>
 <canvas id="c"></canvas>
 <div id="labels"></div>
-<div id="title"><b>🏭 __COMPANY__</b> · ออฟฟิศ AI<small id="clock"></small></div>
-<div id="panel"><span class="x" id="px">✕</span><div id="pc"></div></div>
+<div id="title"><b><span class="ms">factory</span> __COMPANY__</b> · ออฟฟิศ AI<small id="clock"></small></div>
+<div id="panel"><span class="x ms" id="px">close</span><div id="pc"></div></div>
 <div id="ui">
   <div class="btns">
-    <button id="bLight">☀️ ปรับแสง</button><button id="bReset">🎯 มุมเดิม</button>
-    <button id="bNight">🌙 ไฟกลางคืน</button><button id="bSpin">🔄 หมุนอัตโนมัติ</button>
+    <button id="bLight"><span class="ms">light_mode</span> ปรับแสง</button><button id="bReset"><span class="ms">center_focus_strong</span> มุมเดิม</button>
+    <button id="bNight"><span class="ms">bedtime</span> ไฟกลางคืน</button><button id="bSpin"><span class="ms">360</span> หมุนอัตโนมัติ</button>
   </div>
   <div class="legend" id="legend"></div>
 </div>
@@ -77,6 +71,10 @@ OFFICE_HTML = r"""<!doctype html>
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const DATA = __DATA__;
 const STATUS = __STATUS__;
@@ -91,14 +89,31 @@ const tickClock = () => $('clock').textContent = new Date().toLocaleString('th-T
 tickClock(); setInterval(tickClock, 10000);
 
 let renderer;
-try { renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: true, alpha: true }); }
+try { renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: true }); }
 catch (e) { $('err').style.display = 'flex'; throw e; }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setClearColor(0x000000, 0);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
+
+// sky gradients painted once into textures (bloom needs an opaque background, not a transparent canvas)
+function sky(stops, stars) {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 512;
+  const g = c.getContext('2d'), grad = g.createLinearGradient(0, 0, 0, 512);
+  stops.forEach(([o, col]) => grad.addColorStop(o, col)); g.fillStyle = grad; g.fillRect(0, 0, 16, 512);
+  if (!stars) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
+  const big = document.createElement('canvas'); big.width = 1024; big.height = 1024;
+  const b = big.getContext('2d'); b.drawImage(c, 0, 0, 1024, 1024);
+  for (let i = 0; i < 160; i++) {
+    const y = Math.random() ** 1.6 * 700, r = Math.random() * 1.3 + .3;
+    b.fillStyle = `rgba(255,255,255,${.35 + Math.random() * .6})`; b.beginPath(); b.arc(Math.random() * 1024, y, r, 0, 7); b.fill();
+  }
+  const t = new THREE.CanvasTexture(big); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const DAY_SKY = sky([[0, '#fff4ec'], [.5, '#fde6e4'], [1, '#e7e3fb']]);
+const NIGHT_SKY = sky([[0, '#0d1026'], [.55, '#171b3a'], [1, '#2a2f5c']], true);
+scene.background = DAY_SKY;
 
 // ---------------------------------------------------------------- camera
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 500);
@@ -109,10 +124,18 @@ controls.enableDamping = true; controls.maxPolarAngle = Math.PI / 2.4; controls.
 controls.autoRotateSpeed = .6;
 const TARGET = new THREE.Vector3(0, 1, 1);
 controls.target.copy(TARGET);
+// post-processing: scene -> bloom (night only) -> output (sRGB). Own MSAA target since composer buffers aren't multisampled.
+const composer = new EffectComposer(renderer,
+  new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .85, .55, .62);
+bloom.enabled = false;
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
 function resize() {
   const w = innerWidth, h = innerHeight, a = w / h, V = a < 1 ? 27 : 17;
   camera.left = -V * a; camera.right = V * a; camera.top = V; camera.bottom = -V;
-  camera.updateProjectionMatrix(); renderer.setSize(w, h, false);
+  camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h);
 }
 addEventListener('resize', resize); resize();
 
@@ -397,7 +420,8 @@ DATA.agents.forEach((a, i) => {
   if (i % 3 === 0) sphere(.2, hairM, 0, 2.18, -.18, rig, 12);                         // bun
   if (i % 3 === 1) { const back = sphere(.4, hairM, 0, 1.6, -.17, rig, 16); back.scale.set(1.05, 1.1, .7); } // long hair
   const eyeM = mat(0x2b2540, { roughness: .3 });
-  [-.14, .14].forEach(x => { sphere(.055, eyeM, x, 1.72, .38, rig, 10); sphere(.018, mat(0xffffff), x + .02, 1.745, .43, rig, 6); });
+  const eyes = [];
+  [-.14, .14].forEach(x => { eyes.push(sphere(.055, eyeM, x, 1.72, .38, rig, 10)); eyes.push(sphere(.018, mat(0xffffff), x + .02, 1.745, .43, rig, 6)); });
   const blushM = new THREE.MeshBasicMaterial({ color: 0xff9db5, transparent: true, opacity: .55 });
   [-.24, .24].forEach(x => { const b = new THREE.Mesh(new THREE.CircleGeometry(.065, 12), blushM); b.position.set(x, 1.62, .37); b.rotation.y = x * .9; rig.add(b); });
   const smile = new THREE.Mesh(new THREE.TorusGeometry(.06, .014, 6, 12, Math.PI), eyeM); smile.position.set(0, 1.6, .405); smile.rotation.z = Math.PI; rig.add(smile);
@@ -417,10 +441,11 @@ DATA.agents.forEach((a, i) => {
   const label = document.createElement('div');
   label.className = 'label';
   label.style.setProperty('--c', STATUS[a.status][1]);
-  label.innerHTML = `<span class="dot"></span><b>${a.emoji} ${esc(a.name)}</b>` +
+  label.innerHTML = `<span class="dot"></span><b>${esc(a.name)}</b>` +
     (a.status === 'idle' ? '' : ` · ${esc(a.role)}<span class="task">${esc(a.task)}</span>`);
   labelsEl.appendChild(label);
-  agents.push({ a, g, rig, body, head, armL, armR, legL, legR, orb, halo, label, target, wanderAt: 2 + Math.random() * 4, pickables: [body, head, hair] });
+  agents.push({ a, g, rig, body, head, armL, armR, legL, legR, orb, halo, label, target, eyes, speed: 0, hover: 0,
+    blinkAt: 1 + Math.random() * 3, wanderAt: 2 + Math.random() * 4, pickables: [body, head, hair] });
   if (a.status === 'working') screens[a.id].material.emissiveIntensity = .9;
 });
 const hasReview = DATA.agents.some(a => a.status === 'review');
@@ -435,13 +460,31 @@ renderer.domElement.addEventListener('click', e => {
   const hit = ray.intersectObjects(agents.flatMap(x => x.pickables), false)[0];
   if (!hit) return;
   const a = hit.object.userData.agent, [st, c] = STATUS[a.status];
-  $('pc').innerHTML = `<h3>${a.emoji} ${esc(a.name)}</h3><div style="opacity:.6;margin-bottom:8px">${esc(a.role)}</div>
+  $('pc').innerHTML = `<h3>${esc(a.name)}</h3><div style="opacity:.6;margin-bottom:8px">${esc(a.role)}</div>
     <span class="chip" style="background:${c}">${st}</span>
     <p style="margin:10px 0 6px">${esc(a.task)}</p><p style="opacity:.7;font-size:13px;margin:0 0 6px">${esc(a.desc)}</p>
     <div style="opacity:.55;font-size:12px">งานที่เสร็จแล้ว ${a.done} งาน</div>`;
   $('panel').style.display = 'block';
 });
 $('px').onclick = () => $('panel').style.display = 'none';
+let hovered = null;
+renderer.domElement.addEventListener('pointermove', e => {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(agents.flatMap(x => x.pickables), false)[0];
+  hovered = hit ? agents.find(x => x.pickables.includes(hit.object)) : null;
+  renderer.domElement.style.cursor = hovered ? 'pointer' : 'grab';
+});
+
+// glowing "code" particles that drift up from the screens of agents who are working
+const sparkGeo = new THREE.BoxGeometry(.09, .09, .09), sparks = [];
+for (let i = 0; i < 40; i++) {
+  const m = new THREE.Mesh(sparkGeo, new THREE.MeshStandardMaterial({ color: 0x8fd3ff, emissive: 0x8fd3ff, emissiveIntensity: 1.6, transparent: true, opacity: 0 }));
+  m.visible = false; office.add(m); sparks.push({ m, life: 0 });
+}
+const workingDesks = DATA.agents.filter(a => a.status === 'working').map(a => DESKS[a.id]);
+let sparkAt = 0;
 
 let level = 1, night = false;
 $('bLight').onclick = () => { level = level === 1 ? 1.35 : level === 1.35 ? .75 : 1; applyLight(); };
@@ -449,6 +492,8 @@ $('bReset').onclick = () => { camera.position.copy(HOME); controls.target.copy(T
 $('bNight').onclick = () => { night = !night; $('bNight').classList.toggle('on', night); document.body.classList.toggle('night', night); applyLight(); };
 $('bSpin').onclick = () => { controls.autoRotate = !controls.autoRotate; $('bSpin').classList.toggle('on', controls.autoRotate); };
 function applyLight() {
+  scene.background = night ? NIGHT_SKY : DAY_SKY;
+  bloom.enabled = night; bloom.strength = .85 * level;
   hemi.intensity = (night ? .32 : 1.15) * level;
   hemi.color.set(night ? 0x9aa6ff : 0xfff6f0);
   sun.intensity = (night ? .25 : 1.5) * level;
@@ -462,7 +507,7 @@ function applyLight() {
 applyLight();
 
 // ---------------------------------------------------------------- loop
-const clock = new THREE.Clock(), tmp = new THREE.Vector3();
+const clock = new THREE.Clock(), tmp = new THREE.Vector3(), damp = THREE.MathUtils.damp;
 function tick() {
   const dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime;
   controls.update();
@@ -473,27 +518,38 @@ function tick() {
   hand.rotation.z = -t * .5; hand.position.set(5.6 + Math.sin(t * .5) * .1, 2.23 + Math.cos(t * .5) * .1, -9.0);
 
   agents.forEach(ag => {
-    if (ag.a.status === 'idle' && t > ag.wanderAt) {
+    if (ag.a.status === 'idle' && t > ag.wanderAt) {   // idle agents mingle around the office
       ag.target = SPOTS.idle[Math.floor(Math.random() * SPOTS.idle.length)].map(v => v + (Math.random() - .5) * .8);
       ag.wanderAt = t + 5 + Math.random() * 7;
     }
     const p = ag.g.position, dx = ag.target[0] - p.x, dz = ag.target[1] - p.z, d = Math.hypot(dx, dz);
-    let swing = 0;
-    if (d > .05) {
-      const s = Math.min(d, 2.0 * dt); p.x += dx / d * s; p.z += dz / d * s;
-      const want = Math.atan2(dx, dz); let diff = want - ag.g.rotation.y;
-      diff = Math.atan2(Math.sin(diff), Math.cos(diff)); ag.g.rotation.y += diff * Math.min(1, dt * 10);
-      ag.rig.position.y = Math.abs(Math.sin(t * 9)) * .07; swing = Math.sin(t * 9) * .6;
-    } else if (ag.a.status === 'working') {
-      ag.g.rotation.y = Math.PI; ag.rig.position.y = .12;
-      ag.armL.rotation.x = -1.1 + Math.sin(t * 16) * .15; ag.armR.rotation.x = -1.1 + Math.cos(t * 16) * .15;
-      ag.head.rotation.x = .1 + Math.sin(t * 2) * .03;
-    } else {
-      ag.rig.position.y = Math.sin(t * 2 + p.x) * .02;
-      ag.head.rotation.y = Math.sin(t * .8 + p.z) * .35;
+    const moving = d > .05, seated = !moving && ag.a.status === 'working';
+    // ease in/out of walking instead of snapping to full speed
+    ag.speed = damp(ag.speed, moving ? Math.min(2.2, d * 3 + .4) : 0, 6, dt);
+    if (moving) {
+      const s = Math.min(d, ag.speed * dt); p.x += dx / d * s; p.z += dz / d * s;
+      let diff = Math.atan2(dx, dz) - ag.g.rotation.y; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      ag.g.rotation.y += diff * (1 - Math.exp(-10 * dt));
+    } else if (seated) {
+      let diff = Math.PI - ag.g.rotation.y; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      ag.g.rotation.y += diff * (1 - Math.exp(-8 * dt));
     }
-    if (!(d <= .05 && ag.a.status === 'working')) { ag.armL.rotation.x = swing; ag.armR.rotation.x = -swing; }
+    const gait = ag.speed / 2.2, swing = Math.sin(t * 9) * .6 * gait;
+    const bob = moving ? Math.abs(Math.sin(t * 9)) * .07 * gait : Math.sin(t * 2 + p.x) * .015;
+    ag.rig.position.y = damp(ag.rig.position.y, (seated ? .12 : 0) + bob, 12, dt);
+    const armTarget = seated ? -1.1 : swing;
+    ag.armL.rotation.x = damp(ag.armL.rotation.x, armTarget + (seated ? Math.sin(t * 16) * .15 : 0), 14, dt);
+    ag.armR.rotation.x = damp(ag.armR.rotation.x, seated ? -1.1 + Math.cos(t * 16) * .15 : -swing, 14, dt);
     ag.legL.rotation.x = swing * .8; ag.legR.rotation.x = -swing * .8;
+    ag.head.rotation.y = damp(ag.head.rotation.y, moving || seated ? 0 : Math.sin(t * .8 + p.z) * .35, 4, dt);
+    ag.body.scale.y = 1 + Math.sin(t * 2.4 + p.x) * .02;                       // breathing
+    // blink every few seconds
+    if (t > ag.blinkAt) { ag.blinkAt = t + 2.5 + Math.random() * 3.5; ag.blinkEnd = t + .12; }
+    const eyeY = t < (ag.blinkEnd || 0) ? .15 : 1;
+    ag.eyes.forEach(e => e.scale.y = eyeY);
+    // hover highlight
+    ag.hover = damp(ag.hover, hovered === ag ? 1 : 0, 10, dt);
+    ag.g.scale.setScalar(1 + ag.hover * .12);
     ag.orb.position.y = 2.6 + Math.sin(t * 3 + p.x) * .07; ag.halo.position.y = ag.orb.position.y;
     ag.halo.rotation.x = Math.PI / 2 + Math.sin(t) * .3; ag.halo.rotation.y = t;
 
@@ -513,12 +569,23 @@ function tick() {
     placed.push({ x: ag.sx, y, w, h });
     ag.label.style.left = ag.sx + 'px'; ag.label.style.top = y + 'px';
   });
+  if (workingDesks.length && t > sparkAt) {
+    sparkAt = t + .18;
+    const sp = sparks.find(x => x.life <= 0), [x, z] = workingDesks[Math.floor(Math.random() * workingDesks.length)];
+    if (sp) { sp.life = 1; sp.m.visible = true; sp.m.position.set(x + (Math.random() - .5) * .7, 1.7, z - .35); sp.vx = (Math.random() - .5) * .3; }
+  }
+  sparks.forEach(sp => {
+    if (sp.life <= 0) return;
+    sp.life -= dt * .7; sp.m.position.y += dt * .9; sp.m.position.x += sp.vx * dt;
+    sp.m.rotation.x += dt * 3; sp.m.rotation.y += dt * 2;
+    sp.m.material.opacity = Math.min(1, sp.life * 2) * .9;
+    if (sp.life <= 0) sp.m.visible = false;
+  });
   Object.values(screens).forEach(s => { if (s.material.emissiveIntensity > .5) s.material.emissiveIntensity = .75 + Math.sin(t * 5) * .15; });
   if (hasReview) { approveBox.rotation.y = t * 1.2; approveBox.position.y = 1.45 + Math.sin(t * 3) * .06; approveMat.emissiveIntensity = .7 + Math.sin(t * 4) * .3; }
-  renderer.render(scene, camera);
-  requestAnimationFrame(tick);
+  composer.render();
 }
-tick();
+renderer.setAnimationLoop(tick);
 </script></body></html>"""
 
 
