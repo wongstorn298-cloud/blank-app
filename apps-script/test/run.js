@@ -52,8 +52,8 @@ test('สิทธิ์', 'บัญชีที่ไม่มีสิทธ�
 test('สิทธิ์', 'ไม่มีแท็บ ผู้ใช้', 'ปฏิเสธทุกคน (fail closed)', () => {
   const g = load({ sheets, email: ALLOWED, dropTabs: { cases: ['ผู้ใช้'] } }); assert.ok(g.doGet().getContent().includes('ไม่พบแท็บ'));
 });
-test('สิทธิ์', 'ยังไม่ตั้ง CASES_SHEET_ID', 'ปฏิเสธ พร้อมบอกให้ตั้งค่า', () => {
-  const g = load({ sheets, email: ALLOWED, props: { CASES_SHEET_ID: null } }); assert.ok(g.doGet().getContent().includes('CASES_SHEET_ID'));
+test('สิทธิ์', 'ติดตั้งใหม่: ยังไม่ตั้ง ADMIN_EMAIL และไม่มีการตั้งค่าใด ๆ (ไม่มี CASES_SHEET_ID เดิม)', 'ปฏิเสธทุกคน พร้อมบอกให้ตั้ง ADMIN_EMAIL', () => {
+  const g = load({ sheets, email: ALLOWED, props: { CASES_SHEET_ID: null, LAB_SHEET_ID: null } }); assert.ok(g.doGet().getContent().includes('ADMIN_EMAIL'));
 });
 test('สิทธิ์', 'เรียก getBook / getSources โดยไม่มีสิทธิ์ (ข้าม doGet)', 'โยน Error "ไม่มีสิทธิ์" ทุกฟังก์ชันข้อมูล', () => {
   for (const email of ['', 'stranger@example.org']) {
@@ -74,9 +74,9 @@ test('สิทธิ์', 'getBook ด้วย key แปลก ("__proto__", 
 
 // ---------- 2) การอ่านข้อมูล ----------
 let caseBook, labBook;
-test('อ่านข้อมูล', 'getSources', 'คืน 2 แหล่ง + อีเมลผู้ใช้', () => {
+test('อ่านข้อมูล', 'getSources (โหมดเดิม ก่อนย้ายระบบ)', 'คืน 2 แหล่ง + อีเมลผู้ใช้ · ไม่ใช่ผู้ดูแล', () => {
   const g = load({ sheets, email: ALLOWED }); const r = g.__call('getSources');
-  assert.deepStrictEqual(r.sources.map(s => s.key), ['cases', 'lab']); assert.strictEqual(r.email, ALLOWED);
+  assert.deepStrictEqual(r.sources.map(s => s.id), ['cases', 'lab']); assert.strictEqual(r.email, ALLOWED); assert.strictEqual(r.isAdmin, false);
 });
 test('อ่านข้อมูล', 'getBook("cases") ส่งเฉพาะคอลัมน์ที่ใช้', 'ไม่มี User ID (LINE) / เลขหนังสือนำส่ง / ลงวันที่', () => {
   const g = load({ sheets, email: ALLOWED }); caseBook = g.__call('getBook', 'cases');
@@ -464,6 +464,332 @@ test('สรุปอัตโนมัติ', 'ข้อความยาว�
   const g = sumBot(); const t = g.clip_('ก'.repeat(6000)); assert.ok(t.length <= 5000 && t.endsWith('ดูต่อใน Dashboard)'));
 });
 
+// ---------- 8) แหล่งข้อมูล / ผู้ใช้ / ผู้ดูแล ที่จัดการในหน้าเว็บ (Admin.gs) ----------
+const TPLS = JSON.parse(fs.readFileSync(path.join(OUT, 'templates.json'), 'utf8'));
+const ADMIN2 = 'admin2@example.org', ADMIN3 = 'admin3@example.org', USER2 = 'staff.new@example.org', STRANGER = 'stranger@example.org';
+const XID = {   // Sheet ID จำลองเพิ่มเติม (ยาวแบบของจริง)
+  cases2: 'mockCases2SheetId0000000000000003', lot: 'mockLotOnlySheetId000000000000004', wrong: 'mockWrongTypeSheetId00000000005',
+  broken: 'mockCasesMissingHeaders00000006', labBad: 'mockLabBudgetBadHeads00000000007', secret: 'mockOwnerOnlySheet0000000000008',
+  tCasesE: 'tplCasesEmpty0000000000000000009', tCasesF: 'tplCasesFilled000000000000000010', tLabE: 'tplLabEmpty00000000000000000011',
+  tLabF: 'tplLabFilled0000000000000000012', tLotE: 'tplLotEmpty00000000000000000013', tLotF: 'tplLotFilled0000000000000000014' };
+const casesGrid = sheets.cases['ข้อมูลคดี'];
+const CASES2_ROWS = 120;   // ชีตคดีชุดที่ 2 = 120 แถวแรก → ตัวเลขบอตต้องเปลี่ยนเมื่อสลับชีตหลัก
+const XB = {
+  [XID.cases2]: { 'ข้อมูลคดี': casesGrid.slice(0, CASES2_ROWS + 1) },
+  [XID.lot]: { 'คำอธิบาย': [['คำอธิบาย (ไม่มีข้อมูล)']], 'ข้อมูล Lot': sheets.lab['ข้อมูล Lot'], 'หมายเหตุ': sheets.lab['หมายเหตุ'] },
+  [XID.wrong]: { 'Sheet1': [['ชื่อ', 'คะแนน'], ['ค่าลับในเซลล์ XYZ', 99]] },
+  [XID.broken]: { 'ข้อมูลคดี': casesGrid.map((r, i) => r.map((v, j) => (i === 0 && v === 'วันที่รับ' ? 'วันรับ' : v))) },
+  [XID.labBad]: { 'ข้อมูลงบ': [['ปี', 'รายการ'], [2568, 'x']], 'ข้อมูล Lot': sheets.lab['ข้อมูล Lot'] },
+  [XID.secret]: { 'ข้อมูลคดี': casesGrid },
+  [XID.tCasesE]: TPLS.cases && TPLS.cases.empty, [XID.tCasesF]: TPLS.cases && TPLS.cases.filled,
+  [XID.tLabE]: TPLS.lab && TPLS.lab.empty, [XID.tLabF]: TPLS.lab && TPLS.lab.filled,
+  [XID.tLotE]: TPLS.lot && TPLS.lot.empty, [XID.tLotF]: TPLS.lot && TPLS.lot.filled };
+for (const k of Object.keys(XB)) if (!XB[k]) delete XB[k];
+const link = id => 'https://docs.google.com/spreadsheets/d/' + id + '/edit#gid=0';
+/** สภาพแวดล้อมโหมดใหม่ (ไม่มี CASES_SHEET_ID เดิม) · ผู้ใช้เปลี่ยนได้ด้วย as(g, email) */
+function env(o = {}) {
+  const opts = { sheets, email: o.email || OWNER, props: Object.assign({ CASES_SHEET_ID: null, LAB_SHEET_ID: null, ADMIN_EMAIL: OWNER }, o.props || {}),
+    books: XB, acl: o.acl, noAccess: o.noAccess, lockBusy: o.lockBusy,
+    fetch: o.fetch || ((url) => (url.startsWith(LINE_HOST) ? { code: 200, body: {} } : { code: 500, body: {} })) };
+  if ('effectiveEmail' in o) opts.effectiveEmail = o.effectiveEmail;
+  return load(opts);
+}
+const as = (g, email) => { g.__state.email = email; return g; };
+const call = (g, email, fn, ...a) => as(g, email).__call(fn, ...a);
+const cfgOf = g => { const p = g.__state.props, n = +String(p.DASH_CFG_N || '0').split(':')[0]; let j = ''; for (let i = 0; i < n; i++) j += p['DASH_CFG_' + i]; return n ? JSON.parse(j) : null; };
+/** ชุดเริ่มต้น: เจ้าของเพิ่มชีตคดี (หลัก) + ชีตงานตรวจ + ชีต Lot + ผู้ใช้ 1 คน */
+function seeded(o = {}) {
+  const g = env(o);
+  const a = call(g, OWNER, 'adminSaveSource', { link: link(IDS.cases), name: 'คดีส่งตรวจ DNA (ทดสอบ)' });
+  const b = call(g, OWNER, 'adminSaveSource', { link: IDS.lab, name: 'งานตรวจ DNA' });
+  const c = call(g, OWNER, 'adminSaveSource', { link: link(XID.lot), name: '' });
+  call(g, OWNER, 'adminSaveUser', { email: ALLOWED, name: 'เจ้าหน้าที่ทดสอบ', note: '' });
+  g.__ids = Object.fromEntries(c.state.sources.map(s => [s.id === a.state.sources[0].id ? 'cases' : s.kind === 'cases' ? 'cases?' : s.kindLabel === 'Lot พัสดุ' ? 'lot' : 'lab', s.id]));
+  return g;
+}
+const snap = g => JSON.stringify(g.__state.props);
+const ADMIN_FNS = [['adminInspectSource', link(IDS.cases)], ['adminSaveSource', { link: link(XID.cases2) }], ['adminRemoveSource', 'x'], ['adminSetMain', 'x'],
+  ['adminGetPeople'], ['adminSaveUser', { email: 'evil@example.org', admin: true }], ['adminSetAdmin', ALLOWED, true], ['adminRemoveUser', OWNER]];
+
+test('ผู้ดูแล', 'ฟังก์ชันผู้ดูแลทั้ง ' + ADMIN_FNS.length + ' ตัว เรียกโดยผู้ใช้ทั่วไป / คนนอก / ไม่ทราบอีเมล / ผ่านลิงก์บอต (Execute as Me)', 'โยน Error ทุกกรณี · Script Properties ไม่เปลี่ยน · ไม่เปิดชีตใด ๆ', () => {
+  const g = seeded(); let n = 0;
+  for (const who of [ALLOWED, STRANGER, '']) for (const [fn, ...args] of ADMIN_FNS) {
+    const before = snap(g), opens = g.__state.opens; as(g, who);
+    const m = throwsMsg(() => g[fn](...args)); assert.ok(/ผู้ดูแล|ไม่มีสิทธิ์/.test(m), fn + ': ' + m);
+    assert.strictEqual(snap(g), before, fn + ' เปลี่ยน props'); assert.strictEqual(g.__state.opens, opens, fn + ' เปิดชีต'); n++;
+  }
+  const b = env({ email: ADMIN2, effectiveEmail: OWNER });   // ลิงก์บอต: สคริปต์ทำงานในนามเจ้าของ
+  for (const [fn, ...args] of ADMIN_FNS) { assert.ok(throwsMsg(() => b[fn](...args)).includes('ไม่มีสิทธิ์'), fn); n++; }
+  const o = env({ email: OWNER, effectiveEmail: OWNER }); assert.ok(o.adminGetPeople());   // เจ้าของเปิดเองได้
+  return n + ' กรณีถูกปฏิเสธ';
+});
+test('ผู้ดูแล', 'ติดตั้งใหม่: เจ้าของ (ADMIN_EMAIL) เปิด Dashboard ครั้งแรก', 'เข้าได้ เป็นผู้ดูแล ยังไม่มีแหล่งข้อมูล · คนอื่นถูกปฏิเสธ "ไม่อยู่ในรายชื่อ"', () => {
+  const g = env(); assert.ok(g.doGet().getContent().includes('id="view"'));
+  const r = g.__call('getSources'); assert.strictEqual(r.isAdmin, true); assert.strictEqual(r.isOwner, true); assert.strictEqual(r.sources.length, 0); assert.strictEqual(r.mainId, null);
+  assert.ok(as(g, STRANGER).doGet().getContent().includes('ยังไม่อยู่ในรายชื่อ'));
+});
+test('ตรวจลิงก์', 'ชีตคดีที่ถูกต้อง', 'ok · ชีตคดี · แท็บ ข้อมูลคดี 731 แถว · ไม่มีค่าในเซลล์และไม่มี Sheet ID ในผลตรวจ', () => {
+  const g = env(); const r = g.__call('adminInspectSource', link(IDS.cases));
+  assert.strictEqual(r.ok, true); assert.strictEqual(r.kind, 'cases'); assert.strictEqual(r.tabs[0].rows, 731); assert.strictEqual(r.tabs[0].status, 'ok');
+  const js = JSON.stringify(r); assert.ok(!js.includes(IDS.cases));
+  for (const row of casesGrid.slice(1)) for (const v of row) if (typeof v === 'string' && v.length >= 4 && !['ไม่ระบุ'].includes(v)) assert.ok(!js.includes(v), 'มีค่าในเซลล์: ' + v);
+  for (const h of ['เลขหนังสือนำส่ง', 'ลงวันที่']) assert.ok(!js.includes(h), 'มีหัวคอลัมน์จริงที่ไม่จำเป็น ' + h);
+  return `แท็บอื่น: ${r.otherTabs.join(', ')}`;
+});
+test('ตรวจลิงก์', 'ชีตงานตรวจครบ 4 แท็บ (วาง Sheet ID เปล่า)', 'ok · lab · เมนู ภาพรวม/งบประมาณ/Lot พัสดุ', () => {
+  const r = env().__call('adminInspectSource', IDS.lab); assert.strictEqual(r.ok, true); assert.strictEqual(r.kind, 'lab');
+  assert.deepStrictEqual(r.menus, ['ภาพรวม', 'งบประมาณ', 'Lot พัสดุ']); return r.tabs.map(t => t.name + ' ' + t.rows).join(', ');
+});
+test('ตรวจลิงก์', 'ชีต Lot พัสดุอย่างเดียว (คำอธิบาย + ข้อมูล Lot + หมายเหตุ)', 'ok · ป้าย "Lot พัสดุ" · เมนู Lot พัสดุอย่างเดียว · แจ้งแท็บที่ไม่มีเป็นภาษาไทย · ไม่สนแท็บ คำอธิบาย', () => {
+  const r = env().__call('adminInspectSource', link(XID.lot));
+  assert.strictEqual(r.ok, true); assert.strictEqual(r.kindLabel, 'Lot พัสดุ'); assert.deepStrictEqual(r.menus, ['Lot พัสดุ']);
+  assert.ok(r.notes.some(n => n.includes('ไม่มีแท็บ "ข้อมูลเคส"')) && r.notes.some(n => n.includes('ไม่มีแท็บ "ข้อมูลงบ"'))); assert.deepStrictEqual(r.otherTabs, ['คำอธิบาย']);
+  return r.notes.join(' / ');
+});
+test('ตรวจลิงก์', 'ชีตที่ไม่ตรงแม่แบบใดเลย', 'ok=false (no-match) บอกแท็บที่พบ ไม่มีค่าในเซลล์ · บันทึกไม่ได้', () => {
+  const g = env(); const r = g.__call('adminInspectSource', link(XID.wrong));
+  assert.strictEqual(r.ok, false); assert.strictEqual(r.reason, 'no-match'); assert.ok(r.problems[0].includes('Sheet1'));
+  assert.ok(!JSON.stringify(r).includes('ค่าลับในเซลล์') && !JSON.stringify(r).includes('คะแนน'));
+  const before = snap(g); assert.ok(throwsMsg(() => g.adminSaveSource({ link: link(XID.wrong) })).includes('ไม่ตรงแม่แบบ')); assert.strictEqual(snap(g), before);
+  return r.problems[0];
+});
+test('ตรวจลิงก์', 'ชีตคดีที่หัวคอลัมน์ "วันที่รับ" ถูกเปลี่ยนชื่อ / ชีตงานตรวจที่แท็บ ข้อมูลงบ หัวผิดแต่ ข้อมูล Lot ถูก', 'คดี: incomplete บอกคอลัมน์ที่ขาด · งานตรวจ: ใช้ได้ เฉพาะเมนู Lot พร้อมเตือน', () => {
+  const g = env(); const r = g.__call('adminInspectSource', link(XID.broken));
+  assert.strictEqual(r.ok, false); assert.strictEqual(r.reason, 'incomplete'); assert.ok(r.tabs[0].missing.includes('วันที่รับ'));
+  const l = g.__call('adminInspectSource', link(XID.labBad)); assert.strictEqual(l.ok, true); assert.deepStrictEqual(l.menus, ['Lot พัสดุ']);
+  assert.ok(l.problems[0].includes('ข้อมูลงบ') && l.problems[0].includes('หมวด (คอลัมน์ C)'));
+  return r.problems[0] + ' | ' + l.problems[0];
+});
+test('ตรวจลิงก์', 'ผู้ดูแลไม่มีสิทธิ์เปิดชีตนั้น (Execute as user)', 'ok=false (no-access) ข้อความไทย · บันทึกไม่ได้ (เพิ่มได้เฉพาะชีตที่ตัวเองเปิดได้)', () => {
+  const g = env({ acl: { [XID.secret]: ['someone.else@example.org'] } }); const r = g.__call('adminInspectSource', link(XID.secret));
+  assert.strictEqual(r.reason, 'no-access'); assert.ok(r.problems[0].includes('ผู้มีสิทธิ์อ่าน'));
+  assert.ok(throwsMsg(() => g.adminSaveSource({ link: link(XID.secret) })).includes('เปิดชีตนี้ไม่ได้'));
+});
+test('ตรวจลิงก์', 'รูปแบบลิงก์', 'รับ: ลิงก์ /edit#gid, /u/1/, ?usp=sharing, Sheet ID, drive open?id · ปฏิเสธ: ว่าง, ข้อความ, /d/e/ เผยแพร่, ID สั้น, javascript:, โดเมนอื่น', () => {
+  const g = env(); const P = s => g.parseSheetId_(s), id = IDS.cases;
+  for (const ok of [link(id), 'https://docs.google.com/spreadsheets/u/1/d/' + id + '/edit', 'https://docs.google.com/spreadsheets/d/' + id + '/edit?usp=sharing', ' ' + id + ' ', 'https://drive.google.com/open?id=' + id, 'https://docs.google.com/spreadsheets/d/' + id])
+    assert.strictEqual(P(ok), id, ok);
+  for (const bad of ['', 'สวัสดี', 'https://docs.google.com/spreadsheets/d/e/2PACX-1vAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/pubhtml', 'abc123', 'javascript:alert(1)//' + id, 'https://evil.example/spreadsheets/d/' + id + '/edit', 'https://docs.google.com.evil.example/spreadsheets/d/' + id])
+    throwsMsg(() => P(bad));
+});
+test('แหล่งข้อมูล', 'เพิ่มชีตคดี → งานตรวจ → Lot พัสดุ', 'ชีตคดีแรกถูกตั้งเป็นชีตหลักอัตโนมัติ · ชนิดถูกต้อง · ชื่อว่างใช้ชื่อตามชนิด', () => {
+  const g = seeded(); const r = g.__call('getSources');
+  assert.deepStrictEqual(r.sources.map(s => [s.kind, s.kindLabel, s.main]), [['cases', 'คดีส่งตรวจ DNA (รายคดี)', true], ['lab', 'งานตรวจ · Lot · งบประมาณ', false], ['lab', 'Lot พัสดุ', false]]);
+  assert.strictEqual(r.sources[2].name, 'Lot พัสดุ'); assert.deepStrictEqual(r.sources[2].menus, ['Lot พัสดุ']); assert.ok(r.sources.every(s => /^s[0-9a-f]{10}$/.test(s.id)));
+  return r.sources.map(s => s.name + (s.main ? ' [หลัก]' : '')).join(', ');
+});
+test('แหล่งข้อมูล', 'ชีตซ้ำ / ชื่อมีอักขระควบคุมและยาวเกิน / ชื่อมี <script>', 'ชีตซ้ำถูกปฏิเสธ · ชื่อถูกตัดเหลือ 60 ตัว ไม่มีอักขระควบคุม · <script> เก็บเป็นข้อความ (หน้าเว็บ escape)', () => {
+  const g = seeded();
+  assert.ok(throwsMsg(() => g.adminSaveSource({ link: IDS.cases })).includes('มีอยู่แล้ว'));
+  const r = g.__call('adminSaveSource', { link: link(XID.cases2), name: 'ก\u0000ข\n\t' + 'ค'.repeat(100) }).state.sources.find(s => s.name.startsWith('ก'));
+  assert.strictEqual(r.name.length, 60); assert.ok(!/[\u0000-\u001f]/.test(r.name));
+  const x = g.__call('adminSaveSource', { id: r.id, name: '<script>alert(1)</script>' }).state.sources.find(s => s.id === r.id); assert.strictEqual(x.name, '<script>alert(1)</script>');
+});
+test('แหล่งข้อมูล', 'ผู้ใช้ทั่วไปเรียก getSources', 'ไม่มี Sheet ID / ลิงก์ / อีเมลผู้เพิ่ม · ผู้ดูแลได้ลิงก์', () => {
+  const g = seeded(); const u = call(g, ALLOWED, 'getSources'), js = JSON.stringify(u);
+  for (const id of [IDS.cases, IDS.lab, XID.lot]) assert.ok(!js.includes(id), 'รั่ว ' + id);
+  assert.ok(!js.includes('docs.google.com') && !js.includes(OWNER)); assert.strictEqual(u.isAdmin, false); assert.ok(u.sources.every(s => !('url' in s) && !('by' in s)));
+  const a = call(g, OWNER, 'getSources'); assert.ok(a.sources[0].url.includes(IDS.cases));
+  return 'ผู้ใช้ได้: ' + Object.keys(u.sources[0]).join(', ');
+});
+test('แหล่งข้อมูล', 'ผู้ใช้เปิดแหล่งข้อมูลทุกชนิด (getBook ด้วยรหัสแหล่ง)', 'คดี 731 แถว · งานตรวจ 4 แท็บ · Lot พัสดุได้เฉพาะ ข้อมูล Lot + หมายเหตุ · รหัสแปลก ("__proto__", Sheet ID ตรง ๆ) ถูกปฏิเสธ', () => {
+  const g = seeded(); const ids = call(g, ALLOWED, 'getSources').sources.map(s => s.id);
+  const [c, l, t] = ids.map(id => call(g, ALLOWED, 'getBook', id));
+  assert.strictEqual(c.tabs['ข้อมูลคดี'].length, 732); assert.strictEqual(l.names.length, 4); assert.deepStrictEqual(t.names, ['ข้อมูล Lot', 'หมายเหตุ']);
+  for (const bad of ['__proto__', IDS.cases, 'cases', '', null]) throwsMsg(() => as(g, ALLOWED).getBook(bad));
+});
+test('แหล่งข้อมูล', 'ผู้ใช้ที่ยังไม่ได้รับแชร์ชีตบางแหล่ง', 'แหล่งนั้นได้ข้อความไทยที่บอกชื่อชีต + วิธีแก้ (ไม่มี Sheet ID) · แหล่งอื่นยังใช้ได้', () => {
+  const g = seeded({ acl: { [IDS.lab]: [OWNER] } }); const ids = call(g, ALLOWED, 'getSources').sources.map(s => s.id);
+  const m = throwsMsg(() => as(g, ALLOWED).getBook(ids[1])); assert.ok(m.includes('งานตรวจ DNA') && m.includes('ผู้มีสิทธิ์อ่าน') && !m.includes(IDS.lab), m);
+  assert.ok(call(g, ALLOWED, 'getBook', ids[0]).names.length); return m;
+});
+test('แหล่งข้อมูล', 'ตั้งชีตหลัก / ลบ / แก้ลิงก์', 'ตั้งชีตงานตรวจเป็นหลักไม่ได้ · ลบชีตหลักไม่ได้ · เปลี่ยนลิงก์ชีตหลักเป็นชีต Lot ไม่ได้ · ลบชีตอื่นได้', () => {
+  const g = seeded(); const s = g.__call('getSources').sources; const [c, l, t] = s.map(x => x.id);
+  assert.ok(throwsMsg(() => g.adminSetMain(l)).includes('ชีตคดี'));
+  assert.ok(throwsMsg(() => g.adminRemoveSource(c)).includes('ลบชีตหลักไม่ได้'));
+  assert.ok(throwsMsg(() => g.adminSaveSource({ id: c, link: link(XID.labBad) })).includes('ชีตหลักต้องเป็นชีตคดี'));
+  const r = g.__call('adminRemoveSource', t); assert.strictEqual(r.state.sources.length, 2); assert.ok(r.message.includes('ไม่ถูกลบ'));
+  throwsMsg(() => g.adminRemoveSource(t));
+});
+
+// --- บอต + สรุปอ่านชีตหลัก ---
+function botEnv(o = {}) {   // รายการ Deploy ของบอต: active user ว่าง, effective = เจ้าของ, props ของบอต
+  const g = seeded(o); g.__state.email = ''; Object.assign(g.__state.props, BOTP, o.props || {});
+  return g;
+}
+const sayEnv = (g, text) => { const before = g.__state.fetches.length; const e = mkEvent(text);
+  g.doPost({ parameter: { token: TOKEN }, postData: { contents: JSON.stringify({ events: [e] }) } });
+  return g.__state.fetches.slice(before).filter(x => x.url.endsWith('/reply')).map(x => JSON.parse(x.params.payload).messages[0].text); };
+const recs2 = S.parseCases(casesGrid.slice(0, CASES2_ROWS + 1).map(r => r.map(v => (v && typeof v === 'object' && v.$date ? null : v))));
+test('ชีตหลัก', 'LINE bot อ่านชีตหลัก แล้วผู้ดูแลสลับชีตหลักเป็นชีตคดีชุดที่ 2', `คำตอบ "คดีค้าง" เปลี่ยนตามชีตหลัก (ก่อน ${EXP.pending.total} คดี = Python, หลัง = Stats ของชีตชุด 2)`, () => {
+  const g = botEnv({ effectiveEmail: OWNER });
+  const before = sayEnv(g, 'คดีค้าง')[0]; assert.ok(before.includes('คดีค้าง (ยังไม่รับผล) ' + EXP.pending.total + ' คดี'), before);
+  const id2 = call(g, OWNER, 'adminSaveSource', { link: link(XID.cases2), name: 'คดีชุด 2' }).state.sources.find(s => s.name === 'คดีชุด 2').id;
+  call(g, OWNER, 'adminSetMain', id2); g.__state.email = '';
+  const exp2 = g.Stats.pendingByStatus(g.loadCaseRecords_(), {}).total;
+  assert.notStrictEqual(exp2, EXP.pending.total);
+  const after = sayEnv(g, 'คดีค้าง')[0]; assert.ok(after.includes('คดีค้าง (ยังไม่รับผล) ' + exp2 + ' คดี'), after);
+  const lk = sayEnv(g, '9999/2569')[0]; assert.ok(lk.startsWith('ไม่พบคดี'));
+  return `ก่อน ${EXP.pending.total} → หลัง ${exp2} คดี`;
+});
+test('ชีตหลัก', 'สรุปรายเดือน (previewSummary) หลังสลับชีตหลัก', 'ตัวเลขมาจากชีตหลักใหม่ = Stats.summarize ของชีตนั้น', () => {
+  const g = botEnv({ effectiveEmail: OWNER }); g.__state.email = OWNER;
+  const a = g.previewSummary(2569, 10);
+  const id2 = g.__call('adminSaveSource', { link: link(XID.cases2), name: 'คดีชุด 2' }).state.sources.find(s => s.name === 'คดีชุด 2').id; g.__call('adminSetMain', id2);
+  const b = g.previewSummary(2569, 10), s2 = g.Stats.summarize(g.loadCaseRecords_(), g.Stats.monthRange(2026, 10));
+  assert.ok(b.includes('คดีทั้งหมด ' + s2.cases + ' คดี') || (!s2.cases && b.includes('ไม่มีคดี')), b); assert.notStrictEqual(a, b);
+  return 'ต.ค. 2569: ' + (a.match(/คดีทั้งหมด \d+/) || ['-'])[0] + ' → ' + (b.match(/คดีทั้งหมด \d+/) || ['ไม่มีคดี'])[0];
+});
+test('ชีตหลัก', 'ยังไม่มีชีตหลัก / เจ้าของเปิดชีตหลักไม่ได้', 'บอตตอบ "อ่านข้อมูลคดีไม่ได้" (ไม่ crash, ไม่รั่วรายละเอียด) · สรุปอัตโนมัติไม่ส่ง (no-main-source)', () => {
+  const g = env({ email: '', effectiveEmail: OWNER, props: BOTP });
+  const t = sayEnv(g, 'คดีค้าง')[0]; assert.ok(t.includes('อ่านข้อมูลคดีไม่ได้'), t);
+  g.__state.email = OWNER; g.installTriggers(); g.__state.props.PUSH_ENABLED = 'yes'; g.__state.email = '';
+  const uidT = g.__state.triggers[0].getUniqueId();
+  assert.strictEqual(g.dailySummaryJob({ triggerUid: uidT }, bkk('2026-11-01T08:10:00')), 'no-main-source');
+  assert.strictEqual(g.__state.fetches.filter(x => x.url.endsWith('/push')).length, 0);
+  const h = botEnv({ effectiveEmail: OWNER }); h.__opts.acl = { [IDS.cases]: [ALLOWED] };   // ผู้ดูแลเพิ่มไว้ แต่ต่อมาเจ้าของถูกนำออกจากการแชร์
+  assert.ok(sayEnv(h, 'คดีค้าง')[0].includes('อ่านข้อมูลคดีไม่ได้'));
+});
+
+// --- ผู้ใช้ ---
+test('ผู้ใช้', 'เพิ่ม / แก้ / ลบผู้ใช้ในหน้าเว็บ', 'เพิ่มแล้วเปิดได้ทันที · ลบแล้วถูกปฏิเสธทันที (ไม่มีแคชสิทธิ์) · ชื่อ/หมายเหตุแก้ได้', () => {
+  const g = seeded();
+  assert.ok(as(g, USER2).doGet().getContent().includes('ไม่มีสิทธิ์'));
+  const r = call(g, OWNER, 'adminSaveUser', { email: ' Staff.New@Example.org ', name: 'คนใหม่', note: 'ทดลอง' }); assert.ok(r.message.includes('แชร์'));
+  assert.ok(as(g, USER2).doGet().getContent().includes('id="view"')); call(g, USER2, 'getSources');
+  call(g, OWNER, 'adminSaveUser', { email: USER2, name: 'ชื่อใหม่', note: 'ย้ายหน่วย', edit: true });
+  assert.strictEqual(cfgOf(g).people.find(p => p.email === USER2).name, 'ชื่อใหม่');
+  call(g, OWNER, 'adminRemoveUser', USER2);
+  assert.ok(throwsMsg(() => as(g, USER2).getSources()).includes('ไม่มีสิทธิ์')); assert.ok(as(g, USER2).doGet().getContent().includes('ไม่อยู่ในรายชื่อ'));
+});
+test('ผู้ใช้', 'อีเมลไม่ถูกต้อง / ซ้ำ / เป็นเจ้าของ / แก้คนที่ไม่มี / หมายเหตุยาว', 'ปฏิเสธด้วยข้อความไทย · หมายเหตุถูกตัด 100 ตัว', () => {
+  const g = seeded(); const m = [];
+  for (const e of ['', 'abc', 'a@b', 'a b@c.com', '<x>@y.com', 'x@y..com', 'x@' + 'a'.repeat(260) + '.com']) m.push(throwsMsg(() => g.adminSaveUser({ email: e })));
+  assert.ok(m.every(x => x.includes('อีเมลไม่ถูกต้อง')));
+  assert.ok(throwsMsg(() => g.adminSaveUser({ email: ALLOWED.toUpperCase() })).includes('อยู่ในรายชื่อแล้ว'));
+  assert.ok(throwsMsg(() => g.adminSaveUser({ email: OWNER })).includes('เจ้าของ'));
+  assert.ok(throwsMsg(() => g.adminSaveUser({ email: 'nobody@example.org', edit: true })).includes('ไม่พบ'));
+  g.adminSaveUser({ email: USER2, note: 'น'.repeat(500) }); assert.strictEqual(cfgOf(g).people.find(p => p.email === USER2).note.length, 100);
+});
+
+// --- ผู้ดูแล ---
+test('ผู้ดูแล', 'เจ้าของตั้ง admin2 เป็นผู้ดูแล → admin2 เพิ่ม/ลบผู้ดูแลคนอื่นได้', 'admin2 เรียกฟังก์ชันผู้ดูแลได้ · ตั้ง admin3 แล้วลด admin3 กลับเป็นผู้ใช้ (ยังเปิดได้) · ผู้ใช้ทั่วไปยังทำไม่ได้', () => {
+  const g = seeded();
+  call(g, OWNER, 'adminSaveUser', { email: ADMIN2, name: 'ผู้ดูแล 2', admin: true });
+  assert.strictEqual(call(g, ADMIN2, 'getSources').isAdmin, true);
+  call(g, ADMIN2, 'adminSaveUser', { email: ADMIN3, name: 'ผู้ดูแล 3' }); call(g, ADMIN2, 'adminSetAdmin', ADMIN3, true);
+  assert.strictEqual(call(g, ADMIN3, 'getSources').isAdmin, true);
+  const r = call(g, ADMIN2, 'adminSetAdmin', ADMIN3, false); assert.ok(r.message.includes('ยังเปิด Dashboard ได้'));
+  assert.strictEqual(call(g, ADMIN3, 'getSources').isAdmin, false); throwsMsg(() => as(g, ADMIN3).adminGetPeople());
+  assert.ok(call(g, ADMIN2, 'adminInspectSource', link(XID.lot)).ok);
+  return 'ผู้ดูแลตอนนี้: ' + call(g, ADMIN2, 'adminGetPeople').people.filter(p => p.admin).map(p => p.email).concat([OWNER + ' (เจ้าของ)']).join(', ');
+});
+test('ผู้ดูแล', 'ป้องกันเจ้าของ', 'ผู้ดูแลคนอื่นลบ / ลดสิทธิ์ / เพิ่มซ้ำ เจ้าของ (ADMIN_EMAIL) ไม่ได้ · เจ้าของยังเป็นผู้ดูแล', () => {
+  const g = seeded(); call(g, OWNER, 'adminSaveUser', { email: ADMIN2, admin: true }); as(g, ADMIN2);
+  for (const f of [() => g.adminRemoveUser(OWNER), () => g.adminSetAdmin(OWNER, false), () => g.adminSaveUser({ email: OWNER, admin: false }), () => g.adminRemoveUser(' ' + OWNER.toUpperCase())]) assert.ok(/เจ้าของ/.test(throwsMsg(f)));
+  assert.strictEqual(call(g, OWNER, 'getSources').isAdmin, true);
+});
+test('ผู้ดูแล', 'ผู้ดูแลคนสุดท้าย (ไม่มี ADMIN_EMAIL แล้ว เหลือ admin2 คนเดียว)', 'ลบ/ลดสิทธิ์ตัวเองไม่ได้ · เมื่อมีผู้ดูแลอีกคนแล้วลดสิทธิ์ตัวเองได้ (self=true)', () => {
+  const g = seeded(); call(g, OWNER, 'adminSaveUser', { email: ADMIN2, admin: true }); delete g.__state.props.ADMIN_EMAIL; as(g, ADMIN2);
+  assert.ok(throwsMsg(() => g.adminSetAdmin(ADMIN2, false)).includes('อย่างน้อย 1 คน'));
+  assert.ok(throwsMsg(() => g.adminRemoveUser(ADMIN2)).includes('อย่างน้อย 1 คน'));
+  assert.ok(throwsMsg(() => g.adminSaveUser({ email: ADMIN2, admin: false, edit: true })).includes('อย่างน้อย 1 คน'));
+  g.adminSetAdmin(ALLOWED, true); const r = g.__call('adminSetAdmin', ADMIN2, false); assert.strictEqual(r.self, true); assert.strictEqual(r.people, null);
+  assert.strictEqual(call(g, ADMIN2, 'getSources').isAdmin, false);
+});
+test('ผู้ดูแล', 'ผู้ดูแล 2 คนบันทึกพร้อมกัน (lock ไม่ว่าง)', 'ข้อความไทยให้ลองใหม่ ไม่บันทึกทับ', () => {
+  const g = seeded(); const before = snap(g); g.__state.locks = 0;
+  const h = load({ sheets, email: OWNER, props: g.__state.props, books: XB, lockBusy: true });
+  assert.ok(throwsMsg(() => h.adminSaveUser({ email: USER2 })).includes('กำลังบันทึก')); assert.strictEqual(snap(g), before);
+  g.adminSaveUser({ email: USER2 }); assert.ok(g.__state.locks >= 1, 'ไม่ได้ใช้ LockService');
+});
+
+// --- ย้ายระบบเดิม ---
+test('ย้ายระบบ', 'โหมดเดิม (มี CASES_SHEET_ID/LAB_SHEET_ID + แท็บ ผู้ใช้) → เจ้าของเปิด Dashboard', 'สร้างการตั้งค่าใหม่: 2 แหล่ง (ชีตคดี = ชีตหลัก) + ผู้ใช้ ' + EXP.users.length + ' คนจากแท็บ · แจ้งเจ้าของ · ผู้ใช้เดิมเปิดได้ต่อ', () => {
+  const g = load({ sheets, email: OWNER, props: { ADMIN_EMAIL: OWNER } });
+  assert.strictEqual(cfgOf(g), null);
+  const r = g.__call('getSources'); assert.ok(r.notice.includes('ย้ายการตั้งค่าเดิม'), r.notice);
+  const c = cfgOf(g); assert.deepStrictEqual(c.sources.map(s => [s.id, s.kind, s.sheetId]), [['cases', 'cases', IDS.cases], ['lab', 'lab', IDS.lab]]); assert.strictEqual(c.mainId, 'cases');
+  assert.deepStrictEqual(c.people.map(p => p.email).sort(), EXP.users.slice().sort()); assert.ok(c.people.every(p => !p.admin));
+  assert.ok(as(g, ALLOWED).getBook('cases').names.length); assert.strictEqual(call(g, OWNER, 'getSources').notice, '', 'แจ้งครั้งเดียว');
+  return r.notice;
+});
+test('ย้ายระบบ', 'หลังย้ายแล้ว', 'ไม่อ่านแท็บ ผู้ใช้ / CASES_SHEET_ID อีก: เพิ่มชื่อในแท็บไม่มีผล · ลบผู้ใช้ทุกคนในหน้าเว็บแล้วแท็บไม่กลับมาใช้ · เปลี่ยน CASES_SHEET_ID ไม่มีผล', () => {
+  const s2 = JSON.parse(JSON.stringify(sheets)); const g = load({ sheets: s2, email: OWNER, props: { ADMIN_EMAIL: OWNER } }); g.__call('getSources');
+  s2.cases['ผู้ใช้'].push(['latecomer@example.org', 'มาทีหลัง', '']);
+  assert.ok(as(g, 'latecomer@example.org').doGet().getContent().includes('ไม่มีสิทธิ์'));
+  for (const e of EXP.users) call(g, OWNER, 'adminRemoveUser', e);
+  g.__state.caches.clear();
+  assert.ok(as(g, ALLOWED).doGet().getContent().includes('ไม่มีสิทธิ์'));
+  g.__state.props.CASES_SHEET_ID = 'mockSomethingElse000000000000000'; assert.strictEqual(cfgOf(g).sources[0].sheetId, IDS.cases);
+  as(g, ''); g.__state.props.ADMIN_EMAIL = OWNER; assert.strictEqual(g.mainSource_().sheetId, IDS.cases);
+});
+test('ย้ายระบบ', 'โหมดเดิมก่อนย้าย: บอตและสรุป', 'อ่าน CASES_SHEET_ID เดิมเป็นชีตหลัก (บอตเดิมทำงานต่อระหว่างอัปเดต)', () => {
+  const g = bot(); assert.strictEqual(g.mainSource_().sheetId, IDS.cases); assert.strictEqual(cfgOf(g), null);
+});
+
+// --- ขนาดการตั้งค่า ---
+test('ขนาดการตั้งค่า', 'ผู้ใช้ 250 คน ชื่อ/หมายเหตุภาษาไทยยาวสุด', 'แบ่งเก็บหลายคีย์ (ค่าละ ≤ 9 KB ตามเพดานจริง) อ่านกลับได้ครบ · ลดจำนวนแล้วลบคีย์เก่า', () => {
+  const g = seeded();
+  for (let i = 0; i < 250; i++) g.adminSaveUser({ email: `user${i}@example.org`, name: 'ชื่อทดสอบภาษาไทยยาวมาก'.repeat(3), note: 'หมายเหตุ' });
+  const p = g.__state.props, n = +p.DASH_CFG_N.split(':')[0];
+  assert.ok(n > 3, 'ควรแบ่งหลายชิ้น ได้ ' + n);
+  for (let i = 0; i < n; i++) assert.ok(Buffer.byteLength('DASH_CFG_' + i + p['DASH_CFG_' + i]) <= 9 * 1024);
+  assert.strictEqual(g.adminGetPeople().people.length, 251);
+  const bytes = Object.keys(p).filter(k => k.startsWith('DASH_CFG_')).reduce((a, k) => a + Buffer.byteLength(p[k]), 0);
+  for (let i = 0; i < 250; i++) g.adminRemoveUser(`user${i}@example.org`);
+  const m = +p.DASH_CFG_N.split(':')[0]; assert.ok(m < n); assert.ok(!(('DASH_CFG_' + m) in p), 'คีย์เก่าไม่ถูกลบ');
+  return `${n} ชิ้น (${Math.round(bytes / 1024)} KB) → ลดเหลือ ${m} ชิ้น`;
+});
+test('ขนาดการตั้งค่า', 'เกินเพดานที่ตั้ง (120 KB) / ชิ้นการตั้งค่าเสียหาย', 'บันทึกไม่ได้ ข้อความไทย ค่าเดิมไม่เปลี่ยน · ชิ้นเสียหาย = ปฏิเสธทุกคน (fail closed) ไม่เปิดให้ทุกคน', () => {
+  const g = seeded(); let msg = '';
+  try { for (let i = 0; i < 300; i++) g.adminSaveUser({ email: `big${i}@example.org`, name: 'ช'.repeat(60), note: 'ห'.repeat(100) }); } catch (e) { msg = e.message; }
+  assert.ok(msg.includes('ยาวเกินที่เก็บได้'), msg); const ok = g.adminGetPeople().people.length; assert.ok(ok > 100 && ok < 301);
+  g.__state.props.DASH_CFG_0 = g.__state.props.DASH_CFG_0.slice(0, -5);
+  assert.ok(as(g, ALLOWED).doGet().getContent().includes('อ่านไม่ได้ชั่วคราว')); assert.ok(as(g, OWNER).doGet().getContent().includes('ไม่มีสิทธิ์'));
+  return msg;
+});
+test('ขอบเขตสิทธิ์', 'appsscript.json', 'ยังเป็น spreadsheets.readonly (ไม่มีสิทธิ์เขียนชีต/Drive) · Deploy Dashboard = USER_ACCESSING', () => {
+  const m = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'appsscript.json'), 'utf8'));
+  assert.ok(m.oauthScopes.includes('https://www.googleapis.com/auth/spreadsheets.readonly'));
+  assert.ok(!m.oauthScopes.some(s => /\/spreadsheets$|\/drive/.test(s))); assert.strictEqual(m.webapp.executeAs, 'USER_ACCESSING');
+  return m.oauthScopes.map(s => s.split('/').pop()).join(', ');
+});
+
+// --- แม่แบบใน templates/ (ไฟล์เปล่าและใส่ข้อมูลจำลอง) ---
+if (TPLS.cases) {
+  for (const [key, label, kind, kl, menus] of [['tCases', 'ชีตคดี', 'cases', 'คดีส่งตรวจ DNA (รายคดี)', []], ['tLab', 'ชีตงานตรวจ', 'lab', 'งานตรวจ · Lot · งบประมาณ', ['ภาพรวม', 'งบประมาณ', 'Lot พัสดุ']], ['tLot', 'ชีต Lot พัสดุ', 'lab', 'Lot พัสดุ', ['Lot พัสดุ']]]) {
+    test('แม่แบบ', `แม่แบบ${label} (เปล่า และใส่ข้อมูลจำลอง)`, `ตรวจลิงก์ผ่าน · ชนิด "${kl}" · แท็บ คำอธิบาย ถูกข้าม · แถวว่างที่มีแต่สูตรไม่ถูกนับ`, () => {
+      const g = env(); const out = [];
+      for (const v of ['E', 'F']) {
+        const r = g.__call('adminInspectSource', link(XID[key + v]));
+        assert.strictEqual(r.ok, true, JSON.stringify(r.problems)); assert.strictEqual(r.kind, kind); assert.strictEqual(r.kindLabel, kl); assert.deepStrictEqual(r.menus, menus);
+        assert.ok(r.otherTabs.includes('คำอธิบาย'));
+        const main = r.tabs.find(t => t.role === (kind === 'cases' ? 'cases' : menus.length === 1 ? 'lot' : 'cases'));
+        if (v === 'E') assert.strictEqual(main.rows, 0, 'แม่แบบเปล่าต้องนับ 0 แถว'); else assert.ok(main.rows > 0);
+        const id = g.__call('adminSaveSource', { link: link(XID[key + v]), name: label + v }).state.sources.find(s => s.name === label + v).id;
+        const b = g.__call('getBook', id); out.push(`${v === 'E' ? 'เปล่า' : 'มีข้อมูล'} ${main.name} ${main.rows} แถว → getBook ${b.names.join('/')}`);
+      }
+      return out.join(' · ');
+    });
+  }
+  test('แม่แบบ', 'แม่แบบชีตคดีใส่ข้อมูลจำลองครบ ตั้งเป็นชีตหลัก', `บอต "คดีค้าง" = ${EXP.pending.total} คดี และสรุป ต.ค. 2569 = ข้อมูลจำลองเดิม (คอลัมน์คำนวณที่แม่แบบตัดออกไม่มีผล) · เกณฑ์ของกลางส่งให้หน้าเว็บ`, () => {
+    const g = env({ effectiveEmail: OWNER, props: BOTP });
+    const id = g.__call('adminSaveSource', { link: link(XID.tCasesF) }).state.sources[0].id; g.__call('adminSetMain', id);
+    const book = g.__call('getBook', id), h = book.tabs['ข้อมูลคดี'][0];
+    assert.ok(h.some(x => String(x).startsWith('เกณฑ์ของกลางผิดปกติ')), 'ไม่มีคอลัมน์เกณฑ์');
+    for (const gone of ['เดือนที่รับ', 'ปี พ.ศ. (รับ)', 'ปีเลขรายงาน']) assert.ok(!casesGrid[0].includes(gone) || !h.includes(gone));
+    assert.strictEqual(g.previewSummary(2569, 10), SUMMARY_SAMPLES['2026-10']);
+    g.__state.email = ''; const t = sayEnv(g, 'คดีค้าง')[0]; assert.ok(t.includes('คดีค้าง (ยังไม่รับผล) ' + EXP.pending.total + ' คดี'), t);
+    const ge = env({ effectiveEmail: OWNER, props: BOTP }); const ide = ge.__call('adminSaveSource', { link: link(XID.tCasesE) }).state.sources[0].id;
+    const te = (ge.__state.email = '', sayEnv(ge, 'คดีค้าง')[0]); assert.ok(te.includes('คดีค้าง (ยังไม่รับผล) 0 คดี'), te);
+    const thr = book.tabs['ข้อมูลคดี'].slice(1).map(r => r[h.findIndex(x => String(x).startsWith('เกณฑ์'))]).find(v => typeof v === 'number');
+    ge.__state.email = OWNER; const be = ge.__call('getBook', ide).tabs['ข้อมูลคดี'], he = be[0].findIndex(x => String(x).startsWith('เกณฑ์'));
+    assert.strictEqual(be.slice(1).map(r => r[he]).find(v => typeof v === 'number'), 50, 'แม่แบบเปล่าต้องมีเกณฑ์ 50');
+    return `หัวคอลัมน์ที่ส่ง ${h.length} คอลัมน์ · เกณฑ์จากข้อมูลจำลอง ${thr} · แม่แบบเปล่า: เกณฑ์ 50, คดีค้าง 0 คดี`;
+  });
+}
+
 fs.writeFileSync(path.join(OUT, 'stats_by_month.json'), JSON.stringify(statsOf, null, 1));
 fs.writeFileSync(path.join(OUT, 'books.json'), JSON.stringify({ cases: caseBook, lab: labBook, sources: g0.__call('getSources') }));
 // หน้าปฏิเสธ (ไว้ถ่ายภาพหน้าจอ)
@@ -474,7 +800,12 @@ fs.writeFileSync(path.join(OUT, 'denied.html'), load({ sheets, email: 'stranger@
   if (!process.argv.includes('--unit')) {
     let ui = null;
     try { ui = require('./ui'); } catch (e) { console.log('ข้ามทดสอบหน้าเว็บ: ' + e.message); }
-    if (ui) await ui.run({ results, OUT, EXP, statsOf, botSamples: { pending: pendingSample } });
+    const live = { link, XID, OWNER, ALLOWED, ADMIN2, make: () => {
+      const g = seeded({ acl: { [IDS.lab]: [OWNER] } });   // ALLOWED ยังไม่ได้รับแชร์ชีตงานตรวจ
+      call(g, OWNER, 'adminSaveUser', { email: ADMIN2, name: 'ผู้ดูแล ข', note: 'หัวหน้างาน', admin: true });
+      for (const [e, n, t] of [['staff2@example.org', 'เจ้าหน้าที่ ค', 'ห้องปฏิบัติการ'], ['staff3@example.org', 'เจ้าหน้าที่ ง', '']]) call(g, OWNER, 'adminSaveUser', { email: e, name: n, note: t });
+      return g; } };
+    if (ui) await ui.run({ results, OUT, EXP, statsOf, botSamples: { pending: pendingSample }, live });
   }
   const pass = results.filter(r => r.pass).length;
   for (const r of results) console.log(`${r.pass ? 'PASS' : 'FAIL'}  [${r.group}] ${r.name} — ${r.actual}`);

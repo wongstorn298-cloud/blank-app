@@ -5,7 +5,7 @@ const path = require('path');
 const vm = require('vm');
 
 const GAS_DIR = path.resolve(__dirname, '..');
-const IDS = { cases: 'mock-cases-sheet-id', lab: 'mock-lab-sheet-id' };
+const IDS = { cases: 'mock-cases-sheet-id-0000000001', lab: 'mock-lab-sheet-id-00000000000002' };   // ยาวแบบ Sheet ID จริง (≥ 25 ตัว)
 
 function reviveGrid(grid) {
   const w = Math.max(0, ...grid.map(r => r.length));
@@ -24,12 +24,16 @@ function htmlOutput(content) {
   return o;
 }
 
-const GS_FILES = ['Stats.gs', 'Code.gs', 'Intent.gs', 'LineBot.gs', 'Summary.gs'];
+const GS_FILES = ['Stats.gs', 'Code.gs', 'Admin.gs', 'Intent.gs', 'LineBot.gs', 'Summary.gs'];
+const utf8Len = s => Buffer.byteLength(String(s), 'utf8');
 
 /**
  * สร้างสภาพแวดล้อม Apps Script จำลอง แล้วโหลดไฟล์ .gs ทั้งหมด
  * opts: { sheets, email, effectiveEmail, props, noAccess:Set<id>, dropTabs:{cases:[...]},
+ *         books:{ id: { ชื่อแท็บ: grid } }   ชีตเพิ่มเติม (เช่น ชีต Lot อย่างเดียว)
+ *         acl:{ id: [อีเมล] }   ถ้ามี: เปิดชีต id ได้เฉพาะบัญชีที่ทำงานอยู่ (effective user) ในรายการ
  *         fetch:(url, params) => {code, body}   ตัวตอบของ UrlFetchApp (ไม่มีเครือข่ายจริง) }
+ * Script Properties จำลองเพดานจริง: ค่าละ ≤ 9 KB, รวม ≤ 500 KB (โยน Error เหมือน Apps Script)
  * state.fetches = รายการคำขอ UrlFetchApp ที่ถูกเรียก · state.logs = Logger/console
  */
 function load(opts) {
@@ -46,16 +50,32 @@ function load(opts) {
     }
     books[IDS[key]] = tabs;
   }
+  for (const [id, tabs] of Object.entries(opts.books || {})) books[id] = tabs;
+  const effective = () => ('effectiveEmail' in opts ? opts.effectiveEmail : state.email);
+  state.locks = 0;
   const SpreadsheetApp = {
     openById(id) {
       state.opens++;
-      if (!books[id] || (opts.noAccess && opts.noAccess.has(id))) throw new Error('Exception: You do not have permission to access the requested document.');
+      if (!books[id] || (opts.noAccess && opts.noAccess.has(id)) || (opts.acl && opts.acl[id] && !opts.acl[id].includes(effective())))
+        throw new Error('Exception: You do not have permission to access the requested document. (' + id + ')');
+      const sheetOf = n => {
+        const grid = () => reviveGrid(books[id][n]);
+        const lastRow = () => { const g = grid(); let r = g.length; while (r > 0 && g[r - 1].every(v => v === '')) r--; return r; };
+        return {
+          getName: () => n,
+          getDataRange: () => ({ getValues: grid }),
+          getLastRow: lastRow,
+          getLastColumn: () => Math.max(0, ...grid().map(r => { let c = r.length; while (c > 0 && r[c - 1] === '') c--; return c; })),
+          getRange(r, c, nr, nc) {
+            if (!(r >= 1 && c >= 1 && nr >= 1 && nc >= 1)) throw new Error('Exception: The coordinates of the range are outside the dimensions of the sheet.');
+            return { getValues: () => { const g = grid(); return Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => ((g[r - 1 + i] || [])[c - 1 + j] ?? ''))); } };
+          }
+        };
+      };
       return {
         getSpreadsheetTimeZone: () => 'Asia/Bangkok',
-        getSheetByName(n) {
-          if (!(n in books[id])) return null;
-          return { getDataRange: () => ({ getValues: () => reviveGrid(books[id][n]) }) };
-        }
+        getSheets: () => Object.keys(books[id]).map(sheetOf),
+        getSheetByName(n) { return n in books[id] ? sheetOf(n) : null; }
       };
     }
   };
@@ -79,16 +99,26 @@ function load(opts) {
       getActiveUser: () => ({ getEmail: () => state.email }),
       getEffectiveUser: () => ({ getEmail: () => ('effectiveEmail' in opts ? opts.effectiveEmail : state.email) })
     },
-    PropertiesService: { getScriptProperties: () => ({
-      getProperty: k => (Object.prototype.hasOwnProperty.call(props, k) ? props[k] : null),
-      setProperty: (k, v) => { props[k] = String(v); },
-      deleteProperty: k => { delete props[k]; }
-    }) },
+    PropertiesService: { getScriptProperties: () => {
+      const check = next => {
+        for (const [k, v] of Object.entries(next)) if (utf8Len(k) + utf8Len(v) > 9 * 1024) throw new Error('Exception: Argument too large: value (' + k + ')');
+        const total = Object.entries(next).reduce((a, [k, v]) => a + utf8Len(k) + utf8Len(v), 0);
+        if (total > 500 * 1024) throw new Error('Exception: You have exceeded the property storage quota.');
+      };
+      const store = {
+        getProperty: k => (Object.prototype.hasOwnProperty.call(props, k) ? props[k] : null),
+        getProperties: () => Object.assign({}, props),
+        setProperty: (k, v) => { const n = Object.assign({}, props, { [k]: String(v) }); check(n); props[k] = String(v); return store; },
+        setProperties: o => { const n = Object.assign({}, props); for (const [k, v] of Object.entries(o)) n[k] = String(v); check(n); Object.assign(props, n); return store; },
+        deleteProperty: k => { delete props[k]; return store; }
+      };
+      return store;
+    } },
     CacheService: {
       getUserCache: () => cacheFor(state.email),
       getScriptCache: () => ({ get: k => (state.scriptCache.has(k) ? state.scriptCache.get(k) : null), put: (k, v) => { state.scriptCache.set(k, String(v)); } })
     },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
+    LockService: { getScriptLock: () => ({ tryLock: () => { state.locks++; return !opts.lockBusy; }, waitLock: () => { state.locks++; if (opts.lockBusy) throw new Error('Exception: Lock timeout'); }, releaseLock: () => {} }) },
     ContentService: {
       MimeType: { TEXT: 'TEXT', JSON: 'JSON' },
       createTextOutput: t => { const o = { text: t, mime: null, setMimeType(m) { o.mime = m; return o; }, getContent: () => o.text }; return o; }
@@ -132,6 +162,7 @@ function load(opts) {
   vm.createContext(ctx);
   for (const f of GS_FILES) vm.runInContext(fs.readFileSync(path.join(GAS_DIR, f), 'utf8'), ctx, { filename: f });
   ctx.__state = state;
+  ctx.__opts = opts;   // ทดสอบเปลี่ยน acl / noAccess ระหว่างทางได้
   // จำลอง google.script.run: ส่งผ่าน JSON (Date ส่งไม่ได้ ต้องไม่มีในผลลัพธ์)
   ctx.__call = (fn, ...args) => JSON.parse(JSON.stringify(ctx[fn](...args)));
   return ctx;

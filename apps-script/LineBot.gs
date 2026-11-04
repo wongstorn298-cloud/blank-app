@@ -16,7 +16,11 @@
  *   5) จำกัดขนาด body, จำนวน event ต่อคำขอ, ความยาวข้อความ, ทิ้ง event ซ้ำ (webhookEventId) และ event เก่า
  *   6) จำกัดจำนวนครั้งที่เรียก Gemini ต่อชั่วโมง (Intent.gs)
  *
- * Script Properties: LINE_CHANNEL_TOKEN, WEBHOOK_TOKEN, ALLOWED_GROUP_ID, (ไม่บังคับ) ADMIN_EMAIL,
+ * ข้อมูลคดีอ่านจาก "ชีตหลัก" ที่ผู้ดูแลตั้งในหน้า แหล่งข้อมูล ของ Dashboard (loadCaseRecords_ ใน Code.gs)
+ * บอตทำงานในนามเจ้าของ (Execute as: Me) → บัญชีเจ้าของต้องเปิดชีตหลักได้
+ * ถ้ายังไม่ตั้งชีตหลักหรือเปิดไม่ได้ บอตตอบว่า "อ่านข้อมูลคดีไม่ได้ในขณะนี้" (เฉพาะเมื่อถูกเรียก) แทนการเงียบ
+ *
+ * Script Properties: LINE_CHANNEL_TOKEN, WEBHOOK_TOKEN, ALLOWED_GROUP_ID, ADMIN_EMAIL (เจ้าของ),
  *                    SETUP_UNTIL (ตั้งโดย startSetupMode), SETUP_SEEN_GROUPS (บันทึกโดยโหมดตั้งค่า)
  */
 
@@ -77,18 +81,22 @@ function handleEvent_(ev, allowed, setup, props) {
   return 'replied:' + it.intent + ':' + it.via;
 }
 
+var NO_DATA_TEXT_ = 'ขออภัย ตอนนี้บอตอ่านข้อมูลคดีไม่ได้ · โปรดแจ้งผู้ดูแล Dashboard ให้ตรวจ "ชีตหลัก" ในหน้า แหล่งข้อมูล';
+
 /** สร้างข้อความตอบจากเจตนา (อ่าน Sheet ที่นี่เท่านั้น หลังรู้ว่าต้องตอบ) */
 function buildReply_(it) {
+  if (it.intent !== INTENT.CASE_STATUS && it.intent !== INTENT.PENDING) return helpText_();
+  if (it.intent === INTENT.CASE_STATUS && !it.caseNos.length) return 'พิมพ์เลข บก. ที่ต้องการดูสถานะ เช่น 123/2568';
+  var cases;
+  try { cases = loadCaseRecords_(); }
+  catch (e) { console.warn('อ่านชีตหลักไม่ได้: ' + (e && e.message)); return NO_DATA_TEXT_; }
   if (it.intent === INTENT.CASE_STATUS) {
-    if (!it.caseNos.length) return 'พิมพ์เลข บก. ที่ต้องการดูสถานะ เช่น 123/2568';
-    var cases = loadCaseRecords_();
     return it.caseNos.map(function (no) { return formatCaseStatus_(no, Stats.findCase(cases, no)); }).join('\n\n');
   }
   if (it.intent === INTENT.PENDING) {
     var now = new Date();
-    return formatPending_(Stats.pendingByStatus(loadCaseRecords_(), { today: Stats.todayYmd(now), top: LINE.TOP_PENDING }));
+    return formatPending_(Stats.pendingByStatus(cases, { today: Stats.todayYmd(now), top: LINE.TOP_PENDING }));
   }
-  return helpText_();
 }
 
 // ---------------------------------------------------------------- ข้อความ
@@ -230,7 +238,7 @@ function recordSetupGroup_(props, groupId, evType) {
 
 /** [รันใน editor] เปิดโหมดตั้งค่า 60 นาที: เชิญบอตเข้ากลุ่มหรือพิมพ์อะไรก็ได้ในกลุ่ม แล้วรัน showSetupGroups */
 function startSetupMode() {
-  requireAdmin_();
+  requireOwner_();
   var props = PropertiesService.getScriptProperties();
   props.setProperty('SETUP_UNTIL', String(Date.now() + LINE.SETUP_MINUTES * 60000));
   props.deleteProperty('SETUP_SEEN_GROUPS');
@@ -240,7 +248,7 @@ function startSetupMode() {
 
 /** [รันใน editor] แสดงกลุ่มที่บอตเห็นระหว่างโหมดตั้งค่า */
 function showSetupGroups() {
-  requireAdmin_();
+  requireOwner_();
   var seen = JSON.parse(PropertiesService.getScriptProperties().getProperty('SETUP_SEEN_GROUPS') || '[]');
   var msg = seen.length
     ? 'กลุ่มที่พบ:\n' + seen.map(function (x, i) { return (i + 1) + ') ' + x.groupId + ' · ' + x.event + ' · ' + x.at; }).join('\n') +
@@ -251,7 +259,7 @@ function showSetupGroups() {
 
 /** [รันใน editor] ตั้ง ALLOWED_GROUP_ID จากกลุ่มที่พบ (ต้องพบกลุ่มเดียว) แล้วปิดโหมดตั้งค่า */
 function allowSeenGroup() {
-  requireAdmin_();
+  requireOwner_();
   var props = PropertiesService.getScriptProperties();
   var seen = JSON.parse(props.getProperty('SETUP_SEEN_GROUPS') || '[]');
   if (seen.length !== 1) throw new Error('พบ ' + seen.length + ' กลุ่ม ต้องพบกลุ่มเดียว · ตั้ง ALLOWED_GROUP_ID เองใน Script Properties');
@@ -263,7 +271,7 @@ function allowSeenGroup() {
 
 /** [รันใน editor] สร้าง WEBHOOK_TOKEN แบบสุ่ม (ถ้ายังไม่มี) — ดูค่าได้ที่ Project Settings > Script Properties */
 function makeWebhookToken() {
-  requireAdmin_();
+  requireOwner_();
   var props = PropertiesService.getScriptProperties();
   if (props.getProperty('WEBHOOK_TOKEN')) { Logger.log('มี WEBHOOK_TOKEN อยู่แล้ว (ไม่เปลี่ยน)'); return 'exists'; }
   var t = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
@@ -273,11 +281,11 @@ function makeWebhookToken() {
 }
 
 /**
- * ฟังก์ชันผู้ดูแล (รันใน editor) ต้องเป็นบัญชีใน ADMIN_EMAIL
+ * ฟังก์ชันของเจ้าของ (รันใน editor) ต้องเป็นบัญชีใน ADMIN_EMAIL เท่านั้น — ผู้ดูแลที่เพิ่มในหน้าเว็บก็รันไม่ได้
  * เหตุผล: ฟังก์ชันระดับบนสุดทุกตัวถูกเรียกจากหน้า Dashboard ผ่าน google.script.run ได้
- * (Deploy แบบ User accessing) จึงต้องกันไม่ให้ผู้ใช้ Dashboard เปิดโหมดตั้งค่า/สร้าง trigger เอง
+ * (Deploy แบบ User accessing) จึงต้องกันไม่ให้ผู้ใช้/ผู้ดูแล Dashboard เปิดโหมดตั้งค่า/สร้าง trigger ในนามตัวเอง
  */
-function requireAdmin_() {
+function requireOwner_() {
   var admin = String(PropertiesService.getScriptProperties().getProperty('ADMIN_EMAIL') || '').trim().toLowerCase();
   var me = viewerEmail_();
   if (!admin) throw new Error('ตั้ง ADMIN_EMAIL (อีเมลบัญชีเจ้าของสคริปต์) ใน Script Properties ก่อน');

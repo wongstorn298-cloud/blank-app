@@ -1,15 +1,20 @@
 /**
  * Dashboard งานตรวจ DNA — เวอร์ชัน Google Apps Script (ฝั่งเซิร์ฟเวอร์)
  *
- * - doGet() แสดงหน้า Dashboard (Index.html) เฉพาะอีเมลที่อยู่ในแท็บ "ผู้ใช้" ของชีตคดี
- * - หน้าเว็บขอข้อมูลผ่าน google.script.run → getSources() / getBook(key)
- *   ทุกครั้งที่ขอข้อมูลจะตรวจสิทธิ์ซ้ำ (ไม่ได้ตรวจแค่ตอนเปิดหน้า)
- * - Sheet ID อ่านจาก Script Properties: CASES_SHEET_ID, LAB_SHEET_ID (ไม่ใส่ในโค้ด)
- *   ADMIN_CONTACT (ไม่บังคับ) = ข้อความบอกผู้ไม่มีสิทธิ์ว่าให้ติดต่อใคร
+ * - doGet() แสดงหน้า Dashboard (Index.html) เฉพาะผู้ที่อยู่ในรายชื่อ "ผู้ใช้" (จัดการในหน้า ผู้ใช้ ของ Dashboard)
+ *   เจ้าของสคริปต์ (Script Property ADMIN_EMAIL) เป็นผู้ดูแลเสมอ · ผู้ดูแลทุกคนเปิด Dashboard ได้
+ * - แหล่งข้อมูล (Google Sheet) ผู้ดูแลเพิ่มด้วยลิงก์ในหน้า "แหล่งข้อมูล" และเลือก "ชีตหลัก" 1 ชีต (ชีตคดี)
+ *   ที่ LINE bot และสรุปรายเดือน/รายปีใช้ · การตั้งค่าทั้งหมดเก็บใน Script Properties (ดู Admin.gs)
+ * - หน้าเว็บขอข้อมูลผ่าน google.script.run → getSources() / getBook(id)
+ *   ทุกครั้งที่ขอข้อมูลจะตรวจสิทธิ์ซ้ำ (ไม่ได้ตรวจแค่ตอนเปิดหน้า) · ผู้ใช้ทั่วไปได้แค่รหัสแหล่งข้อมูล ไม่เห็น Sheet ID
  * - อ่านเฉพาะแท็บ/คอลัมน์ที่ Dashboard ใช้ (ไม่พึ่งคอลัมน์ User ID (LINE) ซึ่งเจ้าของลบออกแล้ว ถ้ายังมีก็ไม่ส่ง)
  * - โปรเจกต์เดียวกันมี LINE bot (LineBot.gs) ที่ต้อง Deploy แยกแบบ "Execute as: Me" — ในรายการ Deploy นั้น
- *   doGet / getSources / getBook ต้องปฏิเสธเสมอ: ถ้าสคริปต์ทำงานในนามบัญชีอื่นที่ไม่ใช่คนที่เปิด
+ *   doGet / getSources / getBook / ฟังก์ชันผู้ดูแล ต้องปฏิเสธเสมอ: ถ้าสคริปต์ทำงานในนามบัญชีอื่นที่ไม่ใช่คนที่เปิด
  *   (effective user ≠ active user) หรือไม่ทราบอีเมลผู้เปิด จะไม่ส่งข้อมูล (ดู checkAccess_)
+ *
+ * ย้ายจากระบบเดิม (ครั้งเดียว): ถ้ายังไม่เคยบันทึกการตั้งค่าในหน้าเว็บ และมี Script Properties เดิม
+ *   CASES_SHEET_ID / LAB_SHEET_ID ระบบใช้ค่าเหล่านั้น + แท็บ "ผู้ใช้" ของชีตคดีไปก่อน (โหมดเดิม)
+ *   เมื่อเจ้าของเปิด Dashboard ครั้งแรก ระบบคัดลอกเข้าการตั้งค่าใหม่ให้ แล้วเลิกอ่านค่าเดิมทั้งหมด (ดู Admin.gs)
  *
  * วิธีติดตั้ง: ดู apps-script/README.md
  *
@@ -21,11 +26,12 @@
 
 // --- ตั้งค่า ---
 var CONFIG = {
-  PROP_CASES: 'CASES_SHEET_ID',
-  PROP_LAB: 'LAB_SHEET_ID',
-  PROP_CONTACT: 'ADMIN_CONTACT',
+  PROP_OWNER: 'ADMIN_EMAIL',          // อีเมลเจ้าของสคริปต์ = ผู้ดูแลถาวร
+  PROP_CONTACT: 'ADMIN_CONTACT',      // (ไม่บังคับ) ข้อความบอกผู้ไม่มีสิทธิ์ว่าให้ติดต่อใคร
+  LEGACY_CASES: 'CASES_SHEET_ID',     // ค่าเดิม ใช้เฉพาะตอนย้ายระบบครั้งแรก
+  LEGACY_LAB: 'LAB_SHEET_ID',
   TITLE: 'Dashboard งานตรวจ DNA',
-  USERS_TAB: 'ผู้ใช้',
+  USERS_TAB: 'ผู้ใช้',                  // แท็บเดิม (อ่านเฉพาะตอนย้ายระบบ)
   USERS_EMAIL_HEAD: 'อีเมล',
   CASES_TAB: 'ข้อมูลคดี',
   // คอลัมน์ของแท็บข้อมูลคดีที่ส่งให้หน้าเว็บ (จับคู่หัวคอลัมน์แบบ "ขึ้นต้นด้วย") — "เลข บก." ต้องอยู่ลำดับแรก
@@ -33,19 +39,31 @@ var CONFIG = {
     'ประเภทคดี', 'ผู้ตรวจ', 'ของกลาง', 'นับในสถิติ', 'ข้อสังเกต', 'เกณฑ์ของกลางผิดปกติ'],
   LAB_TABS: ['ข้อมูลเคส', 'ข้อมูลงบ', 'ข้อมูล Lot', 'หมายเหตุ'],
   CACHE_SECONDS: 120,        // เก็บข้อมูลที่อ่านแล้วไว้ 2 นาที ให้เปิดหน้า/สลับเมนูเร็ว
-  ACCESS_CACHE_SECONDS: 60,  // ผลตรวจสิทธิ์ (เฉพาะ "มีสิทธิ์") เก็บไว้ 1 นาที — ลบชื่อออกแล้วมีผลภายใน 1 นาที
+  ACCESS_CACHE_SECONDS: 60,  // (โหมดเดิมเท่านั้น) ผลตรวจแท็บ ผู้ใช้ เก็บไว้ 1 นาที
   CACHE_CHUNK: 30000         // ตัวอักษรต่อชิ้นใน CacheService (ค่าหนึ่งชิ้นได้ไม่เกิน 100KB)
 };
 
-var SOURCES = {
-  cases: { name: 'คดีส่งตรวจ DNA (รายคดี)', tpl: 'cases', prop: CONFIG.PROP_CASES },
-  lab: { name: 'งานตรวจ DNA (Lot / งบประมาณ)', tpl: 'lab', prop: CONFIG.PROP_LAB }
+/**
+ * แม่แบบชีตที่รองรับ (ตรงกับ docs/data-schema.md) ใช้ทั้งตรวจลิงก์ตอนเพิ่ม (Admin.gs) และอ่านข้อมูล
+ * cols: [ลำดับคอลัมน์ (0 = A), หัวคอลัมน์ขึ้นต้นด้วย] สำหรับแท็บที่หน้าเว็บอ่านตามตำแหน่ง
+ * need: หัวคอลัมน์ที่ต้องมี (ตำแหน่งใดก็ได้) · opt: ควรมี (ไม่มีก็ใช้ได้ แต่บางส่วนจะแสดง "ไม่ระบุ")
+ */
+var SCHEMA = {
+  cases: { tab: 'ข้อมูลคดี', cols: [[0, 'เลข บก.']], need: ['เลข บก.', 'สภ.', 'จังหวัด', 'วันที่รับ', 'สถานะ', 'ของกลาง'],
+    opt: ['เลขรายงาน', 'วันที่ตรวจเสร็จ', 'วันที่มารับผล', 'ประเภทคดี', 'ผู้ตรวจ', 'นับในสถิติ'] },
+  lab: [
+    { key: 'cases', tab: 'ข้อมูลเคส', menu: 'ภาพรวม', cols: [[0, 'ปีงบประมาณ'], [1, 'ลำดับเดือนในปีงบ'], [4, 'จำนวนของกลาง'], [5, 'จำนวนตัวอย่างตรวจ']] },
+    { key: 'budget', tab: 'ข้อมูลงบ', menu: 'งบประมาณ', cols: [[0, 'ปีงบประมาณ'], [1, 'รายการ'], [2, 'หมวด'], [3, 'จำนวนเงิน']] },
+    { key: 'lot', tab: 'ข้อมูล Lot', menu: 'Lot พัสดุ', cols: [[0, 'ลำดับ']], need: ['วันที่ใช้คำนวณ', 'Lot No', 'จำนวนตัวอย่าง'] }
+  ],
+  notesTab: 'หมายเหตุ'
 };
+
+var KIND_LABEL = { cases: 'คดีส่งตรวจ DNA (รายคดี)', lab: 'งานตรวจ · Lot · งบประมาณ', lot: 'Lot พัสดุ' };
 
 // --- หน้าเว็บ ---
 function doGet() {
-  var email = viewerEmail_();
-  var access = checkAccess_(email);
+  var access = checkAccess_(viewerEmail_());
   if (!access.ok) return messagePage_(access);
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle(CONFIG.TITLE)
@@ -55,28 +73,32 @@ function doGet() {
 
 // --- ฟังก์ชันที่หน้าเว็บเรียก (ต้องไม่ลงท้ายด้วย _) ---
 
-/** รายชื่อแหล่งข้อมูลที่ตั้งค่าไว้ + อีเมลผู้ใช้ */
+/**
+ * รายชื่อแหล่งข้อมูล + อีเมลผู้ใช้ + สิทธิ์ผู้ดูแล
+ * ผู้ใช้ทั่วไปได้เฉพาะ id (รหัสสุ่ม) ชื่อ และชนิด · ผู้ดูแลได้ลิงก์ชีตเพิ่ม
+ * ถ้าเจ้าของเปิดขณะยังเป็นโหมดเดิม (มี CASES_SHEET_ID แต่ยังไม่มีการตั้งค่าใหม่) จะย้ายการตั้งค่าให้ครั้งเดียว
+ */
 function getSources() {
-  var email = requireAccess_();
-  var props = PropertiesService.getScriptProperties();
-  var list = Object.keys(SOURCES).filter(function (k) { return !!props.getProperty(SOURCES[k].prop); })
-    .map(function (k) { return { key: k, name: SOURCES[k].name, tpl: SOURCES[k].tpl }; });
-  return { email: email, sources: list, refreshSeconds: CONFIG.CACHE_SECONDS };
+  var ctx = requireAccess_(), notice = '';
+  if (!ctx.cfg && ctx.isOwner && hasLegacy_()) { notice = migrateLegacy_(ctx.email); ctx = requireAccess_(); }
+  return sourcesPayload_(ctx, notice);
 }
 
 /**
  * ข้อมูลของแหล่งข้อมูลหนึ่ง ในรูปที่ตัวอ่านของหน้าเว็บใช้อยู่แล้ว:
  * { names: [ชื่อแท็บ], tabs: { ชื่อแท็บ: [[หัวคอลัมน์...], [ค่า...], ...] }, sig, at }
  * วันที่ถูกแปลงเป็นเลข serial แบบ Sheets/Excel (google.script.run ส่ง Date ตรง ๆ ไม่ได้)
+ * เปิดชีตด้วยสิทธิ์ของผู้ใช้ที่เปิด Dashboard (ต้องได้รับแชร์ชีตแบบผู้มีสิทธิ์อ่าน)
  */
-function getBook(key) {
-  requireAccess_();
-  if (!Object.prototype.hasOwnProperty.call(SOURCES, key)) throw new Error('ไม่รู้จักแหล่งข้อมูล "' + key + '"');
-  var cacheKey = 'book2:' + key;
+function getBook(id) {
+  var ctx = requireAccess_();
+  var src = findSource_(ctx.cfg, id);
+  if (!src) throw new Error('ไม่พบแหล่งข้อมูลนี้ (ผู้ดูแลอาจลบหรือเปลี่ยนไปแล้ว) · โหลดหน้าใหม่อีกครั้ง');
+  var cacheKey = 'book3:' + src.id + ':' + (src.v || 0);
   var hit = cacheGet_(cacheKey);
   if (hit) return JSON.parse(hit);
-  var ss = openSource_(key);
-  var tabs = key === 'cases' ? readCasesTabs_(ss) : readLabTabs_(ss);
+  var ss = openForViewer_(src, ctx.email);
+  var tabs = src.kind === 'cases' ? readCasesTabs_(ss) : readLabTabs_(ss);
   var json = JSON.stringify(tabs);
   var book = { names: Object.keys(tabs), tabs: tabs, sig: hash_(json), at: new Date().toISOString() };
   cachePut_(cacheKey, JSON.stringify(book));
@@ -85,92 +107,146 @@ function getBook(key) {
 
 /**
  * ตรวจการตั้งค่า: เลือกฟังก์ชันนี้ใน editor แล้วกด Run ดูผลที่ Execution log
- * (บอกแค่จำนวนแถว ไม่แสดงข้อมูลคดี) — คนที่รันต้องมีชื่อในแท็บ ผู้ใช้
+ * (บอกแค่จำนวนแถว ไม่แสดงข้อมูลคดี) — คนที่รันต้องอยู่ในรายชื่อผู้ใช้ หรือเป็นเจ้าของ
  */
 function checkSetup() {
-  var email = requireAccess_();
-  var msg = ['อีเมลของคุณ: ' + email + ' (อยู่ในแท็บ ผู้ใช้ แล้ว)'];
-  Object.keys(SOURCES).forEach(function (k) {
+  var ctx = requireAccess_();
+  var msg = ['อีเมลของคุณ: ' + ctx.email + (ctx.isOwner ? ' (เจ้าของสคริปต์)' : ctx.admin ? ' (ผู้ดูแล)' : ' (ผู้ใช้)'),
+    ctx.cfg ? 'การตั้งค่า: จัดการในหน้าเว็บ (ผู้ใช้ ' + ctx.cfg.people.length + ' คน)' : 'การตั้งค่า: โหมดเดิม (CASES_SHEET_ID / แท็บ ผู้ใช้) · เปิด Dashboard ด้วยบัญชีเจ้าของ 1 ครั้งเพื่อย้ายระบบ'];
+  var main = mainIdOf_(ctx.cfg);
+  sourcesOf_(ctx.cfg).forEach(function (s) {
+    var head = s.name + (s.id === main ? ' [ชีตหลัก]' : '') + ': ';
     try {
-      var tabs = k === 'cases' ? readCasesTabs_(openSource_(k)) : readLabTabs_(openSource_(k));
-      msg.push(SOURCES[k].name + ': ' + Object.keys(tabs).map(function (t) { return t + ' ' + (tabs[t].length - 1) + ' แถว'; }).join(', '));
-    } catch (e) { msg.push(SOURCES[k].name + ': ' + e.message); }
+      var ss = SpreadsheetApp.openById(s.sheetId);
+      var tabs = s.kind === 'cases' ? readCasesTabs_(ss) : readLabTabs_(ss);
+      msg.push(head + Object.keys(tabs).map(function (t) { return t + ' ' + (tabs[t].length - 1) + ' แถว'; }).join(', '));
+    } catch (e) { msg.push(head + (e && e.message ? e.message : 'เปิดไม่ได้')); }
   });
+  if (!main) msg.push('ยังไม่ได้ตั้งชีตหลัก (LINE bot และสรุปอัตโนมัติจะยังไม่ทำงาน)');
   Logger.log(msg.join('\n'));
   return msg.join('\n');
 }
 
 // --- สำหรับ LINE bot / สรุปอัตโนมัติ (ฝั่งเซิร์ฟเวอร์เท่านั้น) ---
 
+/** แหล่งข้อมูลที่ตั้งเป็น "ชีตหลัก" (ชีตคดี) หรือ null */
+function mainSource_() {
+  var cfg = loadConfig_(), id = mainIdOf_(cfg);
+  return id ? findSource_(cfg, id) : null;
+}
+
 /**
- * รายการคดีทั้งหมดในรูปของ Stats.parseCases() — ไม่ตรวจสิทธิ์ผู้ใช้ (ผู้เรียกต้องกรองเอง เช่น groupId)
+ * รายการคดีทั้งหมดจาก "ชีตหลัก" ในรูปของ Stats.parseCases() — ไม่ตรวจสิทธิ์ผู้ใช้ (ผู้เรียกต้องกรองเอง เช่น groupId)
+ * บอต/trigger ทำงานในนามเจ้าของ → เจ้าของต้องเปิดชีตหลักได้
  * ชื่อลงท้าย _ = หน้าเว็บเรียกผ่าน google.script.run ไม่ได้ ใช้ได้เฉพาะโค้ดฝั่งเซิร์ฟเวอร์ (LineBot.gs / Summary.gs)
  */
 function loadCaseRecords_() {
-  var tabs = readCasesTabs_(openSource_('cases'));
-  return Stats.parseCases(tabs[CONFIG.CASES_TAB]);
+  var src = mainSource_();
+  if (!src) throw new Error('ยังไม่ได้ตั้งชีตหลัก (หน้า แหล่งข้อมูล ของ Dashboard)');
+  var ss;
+  try { ss = SpreadsheetApp.openById(src.sheetId); }
+  catch (e) { throw new Error('เปิดชีตหลัก "' + src.name + '" ไม่ได้ · เจ้าของสคริปต์ต้องมีสิทธิ์อ่านชีตนี้'); }
+  return Stats.parseCases(readCasesTabs_(ss)[CONFIG.CASES_TAB]);
 }
 
 // --- สิทธิ์การเข้าถึง ---
 
 function viewerEmail_() {
-  try { return String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) { return ''; }
+  try { return normEmail_(Session.getActiveUser().getEmail()); } catch (e) { return ''; }
 }
 
 /** บัญชีที่สคริปต์ทำงานในนาม (Deploy แบบ Me = เจ้าของ, แบบ User accessing = คนที่เปิด) */
 function effectiveEmail_() {
-  try { return String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) { return ''; }
+  try { return normEmail_(Session.getEffectiveUser().getEmail()); } catch (e) { return ''; }
+}
+
+function normEmail_(s) { return String(s || '').trim().toLowerCase(); }
+
+/** อีเมลเจ้าของสคริปต์ (ADMIN_EMAIL) — ผู้ดูแลถาวร ลบหรือลดสิทธิ์จากหน้าเว็บไม่ได้ */
+function ownerEmail_() {
+  return normEmail_(PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_OWNER));
+}
+
+function hasLegacy_() {
+  return !!PropertiesService.getScriptProperties().getProperty(CONFIG.LEGACY_CASES);
 }
 
 /**
- * ตรวจว่าอีเมลอยู่ในแท็บ "ผู้ใช้" หรือไม่
- * @return {{ok:boolean, email:string, reason:string}}
- *   reason: no-email | wrong-deployment | no-config | no-sheet-access | no-users-tab | not-listed
+ * ตรวจสิทธิ์ของอีเมล
+ * @return {{ok:boolean, email:string, reason:string, admin:boolean, isOwner:boolean, cfg:object|null}}
+ *   reason: no-email | wrong-deployment | no-config | config-broken | not-listed
+ *           (โหมดเดิมเท่านั้น) no-sheet-access | no-users-tab
  */
 function checkAccess_(email) {
-  if (!email) return { ok: false, email: '', reason: 'no-email' };
+  var deny = function (reason) { return { ok: false, email: email || '', reason: reason, admin: false, isOwner: false, cfg: null }; };
+  if (!email) return deny('no-email');
   // Deploy แบบ "Execute as: Me" (รายการ Deploy ของ LINE bot) จะอ่านชีตด้วยสิทธิ์เจ้าของแทนผู้เปิด → ห้ามส่งข้อมูล
   var eff = effectiveEmail_();
-  if (eff && eff !== email) return { ok: false, email: email, reason: 'wrong-deployment' };
-  var cache = userCache_(), ck = 'acl:' + email;
-  if (cache && cache.get(ck) === '1') return { ok: true, email: email, reason: '' };
-  var id = PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_CASES);
-  if (!id) return { ok: false, email: email, reason: 'no-config' };
-  var sheet;
-  try { sheet = SpreadsheetApp.openById(id).getSheetByName(CONFIG.USERS_TAB); }
-  catch (e) { return { ok: false, email: email, reason: 'no-sheet-access' }; }
-  if (!sheet) return { ok: false, email: email, reason: 'no-users-tab' };
-  var values = sheet.getDataRange().getValues();
-  var col = (values[0] || []).map(function (h) { return String(h).trim(); }).indexOf(CONFIG.USERS_EMAIL_HEAD);
-  if (col < 0) return { ok: false, email: email, reason: 'no-users-tab' };
-  var listed = values.slice(1).some(function (r) { return String(r[col] || '').trim().toLowerCase() === email; });
-  if (!listed) return { ok: false, email: email, reason: 'not-listed' };
-  if (cache) cache.put(ck, '1', CONFIG.ACCESS_CACHE_SECONDS);
-  return { ok: true, email: email, reason: '' };
+  if (eff && eff !== email) return deny('wrong-deployment');
+  var owner = ownerEmail_(), isOwner = !!owner && email === owner, cfg;
+  try { cfg = loadConfig_(); } catch (e) { return deny('config-broken'); }
+  if (cfg) {
+    var p = findPerson_(cfg, email);
+    if (!isOwner && !p) return deny('not-listed');
+    return { ok: true, email: email, reason: '', admin: isOwner || !!(p && p.admin), isOwner: isOwner, cfg: cfg };
+  }
+  // ยังไม่เคยบันทึกการตั้งค่าในหน้าเว็บ
+  if (isOwner) return { ok: true, email: email, reason: '', admin: true, isOwner: true, cfg: null };
+  if (!hasLegacy_()) return deny(owner ? 'not-listed' : 'no-config');
+  var legacy = legacyUserCheck_(email);
+  return legacy === 'ok' ? { ok: true, email: email, reason: '', admin: false, isOwner: false, cfg: null } : deny(legacy);
 }
 
-/** ใช้ในทุกฟังก์ชันที่ส่งข้อมูล: ไม่มีสิทธิ์ = โยน Error (หน้าเว็บแสดงข้อความนี้) */
+/** โหมดเดิม: ตรวจอีเมลกับแท็บ "ผู้ใช้" ในชีต CASES_SHEET_ID ด้วยสิทธิ์ของผู้เปิด (ใช้จนกว่าเจ้าของจะย้ายระบบ) */
+function legacyUserCheck_(email) {
+  var cache = userCache_(), ck = 'acl:' + email;
+  if (cache && cache.get(ck) === '1') return 'ok';
+  var id = PropertiesService.getScriptProperties().getProperty(CONFIG.LEGACY_CASES);
+  var sheet;
+  try { sheet = SpreadsheetApp.openById(id).getSheetByName(CONFIG.USERS_TAB); } catch (e) { return 'no-sheet-access'; }
+  if (!sheet) return 'no-users-tab';
+  var values = sheet.getDataRange().getValues();
+  var col = (values[0] || []).map(function (h) { return String(h).trim(); }).indexOf(CONFIG.USERS_EMAIL_HEAD);
+  if (col < 0) return 'no-users-tab';
+  var listed = values.slice(1).some(function (r) { return normEmail_(r[col]) === email; });
+  if (!listed) return 'not-listed';
+  if (cache) cache.put(ck, '1', CONFIG.ACCESS_CACHE_SECONDS);
+  return 'ok';
+}
+
+/** ใช้ในทุกฟังก์ชันที่ส่งข้อมูล: ไม่มีสิทธิ์ = โยน Error (หน้าเว็บแสดงข้อความนี้) · คืนบริบทสิทธิ์ */
 function requireAccess_() {
   var a = checkAccess_(viewerEmail_());
   if (!a.ok) throw new Error('ไม่มีสิทธิ์เข้าถึงข้อมูล (' + (a.email || 'ไม่ทราบอีเมล') + ') · โปรดติดต่อ ' + contact_());
-  return a.email;
+  return a;
+}
+
+/** ใช้ในทุกฟังก์ชันผู้ดูแล (หน้าแหล่งข้อมูล / ผู้ใช้) — ตรวจฝั่งเซิร์ฟเวอร์ทุกครั้ง ไม่เชื่อหน้าเว็บ */
+function requireAdminCtx_() {
+  var a = requireAccess_();
+  if (!a.admin) throw new Error('ฟังก์ชันนี้สำหรับผู้ดูแล Dashboard เท่านั้น');
+  return a;
 }
 
 function contact_() {
   return PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_CONTACT) || 'ผู้ดูแล Dashboard ของกลุ่มงาน';
 }
 
+function esc_(s) {
+  return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+}
+
 function messagePage_(access) {
-  var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var who = access.email
-    ? 'บัญชีที่คุณใช้อยู่: <b>' + esc(access.email) + '</b>'
+    ? 'บัญชีที่คุณใช้อยู่: <b>' + esc_(access.email) + '</b>'
     : 'ระบบไม่ทราบอีเมลของคุณ (Google ไม่ได้ส่งอีเมลมาให้) · ลองออกจากระบบแล้วเข้าสู่ระบบด้วยบัญชี Google ที่ได้รับสิทธิ์ หรือแจ้งผู้ดูแลให้ตรวจการตั้งค่า Deploy';
   var why = {
     'no-email': '',
     'wrong-deployment': 'ลิงก์นี้ไม่ใช่ลิงก์ Dashboard (เป็นลิงก์สำหรับระบบอื่น) · โปรดใช้ลิงก์ Dashboard ที่ผู้ดูแลส่งให้',
-    'no-config': 'ผู้ดูแลยังไม่ได้ตั้งค่า CASES_SHEET_ID ใน Script Properties',
+    'no-config': 'ผู้ดูแลยังไม่ได้ตั้งค่า ADMIN_EMAIL (อีเมลเจ้าของสคริปต์) ใน Script Properties',
+    'config-broken': 'การตั้งค่าของระบบอ่านไม่ได้ชั่วคราว · ลองเปิดใหม่อีกครั้ง ถ้ายังเป็นอยู่ให้แจ้งผู้ดูแล',
     'no-sheet-access': 'บัญชีนี้ยังไม่ได้รับสิทธิ์ "ผู้มีสิทธิ์อ่าน" ใน Google Sheet ข้อมูลคดี',
-    'no-users-tab': 'ไม่พบแท็บ "' + CONFIG.USERS_TAB + '" หรือคอลัมน์ "' + CONFIG.USERS_EMAIL_HEAD + '" ในชีตข้อมูลคดี',
+    'no-users-tab': 'ไม่พบแท็บ "' + CONFIG.USERS_TAB + '" หรือคอลัมน์ "' + CONFIG.USERS_EMAIL_HEAD + '" ในชีตข้อมูลคดี (ระบบเดิม)',
     'not-listed': 'อีเมลนี้ยังไม่อยู่ในรายชื่อผู้ใช้ที่ได้รับอนุญาต'
   }[access.reason] || '';
   var html = '<!doctype html><html lang="th"><head><meta charset="utf-8">' +
@@ -182,20 +258,72 @@ function messagePage_(access) {
     '@media (prefers-color-scheme:dark){body{background:#0f1419;color:#e6edf3}.c{background:#161c23;border-color:#2a333d}p{color:#b3bfcc}b{color:#e6edf3}}</style>' +
     '</head><body><main class="c"><h1>ไม่มีสิทธิ์เข้าถึง</h1>' +
     '<p>ขออภัย Dashboard นี้เปิดได้เฉพาะเจ้าหน้าที่ที่ได้รับอนุญาต</p>' +
-    '<p>' + who + '</p>' + (why ? '<p>' + esc(why) + '</p>' : '') +
-    '<p>หากต้องการสิทธิ์ โปรดติดต่อ <b>' + esc(contact_()) + '</b> พร้อมแจ้งอีเมลข้างต้น</p></main></body></html>';
+    '<p>' + who + '</p>' + (why ? '<p>' + esc_(why) + '</p>' : '') +
+    '<p>หากต้องการสิทธิ์ โปรดติดต่อ <b>' + esc_(contact_()) + '</b> พร้อมแจ้งอีเมลข้างต้น</p></main></body></html>';
   return HtmlService.createHtmlOutput(html).setTitle('ไม่มีสิทธิ์เข้าถึง · ' + CONFIG.TITLE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-// --- อ่านข้อมูลจาก Google Sheet ---
+// --- แหล่งข้อมูล ---
 
-function openSource_(key) {
-  var id = PropertiesService.getScriptProperties().getProperty(SOURCES[key].prop);
-  if (!id) throw new Error('ยังไม่ได้ตั้งค่า ' + SOURCES[key].prop + ' ใน Script Properties');
-  try { return SpreadsheetApp.openById(id); }
-  catch (e) { throw new Error('เปิด Google Sheet "' + SOURCES[key].name + '" ไม่ได้ · ตรวจ Sheet ID และสิทธิ์การแชร์'); }
+/**
+ * รายการแหล่งข้อมูล: จากการตั้งค่าในหน้าเว็บ หรือ (ยังไม่เคยตั้งค่า) จาก CASES_SHEET_ID / LAB_SHEET_ID เดิม
+ * @return {{id,name,sheetId,kind,tabs:string[],v}[]}
+ */
+function sourcesOf_(cfg) {
+  if (cfg) return cfg.sources;
+  var props = PropertiesService.getScriptProperties(), out = [];
+  var c = props.getProperty(CONFIG.LEGACY_CASES), l = props.getProperty(CONFIG.LEGACY_LAB);
+  if (c) out.push({ id: 'cases', name: KIND_LABEL.cases, sheetId: String(c).trim(), kind: 'cases', tabs: [CONFIG.CASES_TAB], v: 0 });
+  if (l) out.push({ id: 'lab', name: 'งานตรวจ DNA (Lot / งบประมาณ)', sheetId: String(l).trim(), kind: 'lab', tabs: CONFIG.LAB_TABS.slice(), v: 0 });
+  return out;
 }
+
+function findSource_(cfg, id) {
+  if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(id)) return null;
+  var list = sourcesOf_(cfg);
+  for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+  return null;
+}
+
+/** รหัสชีตหลัก (ต้องเป็นชีตคดีที่ยังอยู่ในรายการ) */
+function mainIdOf_(cfg) {
+  if (!cfg) return hasLegacy_() ? 'cases' : null;
+  var s = findSource_(cfg, cfg.mainId);
+  return s && s.kind === 'cases' ? s.id : null;
+}
+
+/** ป้ายชนิดของแหล่งข้อมูล: ชีตงานตรวจที่มีเฉพาะแท็บ Lot = "Lot พัสดุ" */
+function kindLabelOf_(src) {
+  if (src.kind === 'cases') return KIND_LABEL.cases;
+  var t = src.tabs || [];
+  return t.indexOf('ข้อมูล Lot') >= 0 && t.indexOf('ข้อมูลเคส') < 0 && t.indexOf('ข้อมูลงบ') < 0 ? KIND_LABEL.lot : KIND_LABEL.lab;
+}
+
+function sheetUrl_(id) { return 'https://docs.google.com/spreadsheets/d/' + id + '/edit'; }
+
+/** ข้อมูลสำหรับหน้าเว็บ — ผู้ใช้ทั่วไปไม่ได้รับ Sheet ID / ลิงก์ / อีเมลผู้เพิ่ม */
+function sourcesPayload_(ctx, notice) {
+  var main = mainIdOf_(ctx.cfg);
+  var sources = sourcesOf_(ctx.cfg).map(function (s) {
+    var o = { id: s.id, name: s.name, kind: s.kind, kindLabel: kindLabelOf_(s), main: s.id === main, rev: s.v || 0,
+      menus: s.kind === 'cases' ? [] : SCHEMA.lab.filter(function (t) { return (s.tabs || []).indexOf(t.tab) >= 0; }).map(function (t) { return t.menu; }) };
+    if (ctx.admin) { o.url = sheetUrl_(s.sheetId); o.by = s.by || ''; o.at = s.at || ''; }
+    return o;
+  });
+  return { email: ctx.email, isAdmin: !!ctx.admin, isOwner: !!ctx.isOwner, owner: ctx.admin ? ownerEmail_() : '',
+    mainId: main, sources: sources, legacy: !ctx.cfg && hasLegacy_(), notice: notice || '', refreshSeconds: CONFIG.CACHE_SECONDS };
+}
+
+/** เปิดชีตด้วยสิทธิ์ผู้ใช้ · เปิดไม่ได้ = ข้อความภาษาไทยที่ไม่มี Sheet ID */
+function openForViewer_(src, email) {
+  try { return SpreadsheetApp.openById(src.sheetId); }
+  catch (e) {
+    throw new Error('บัญชี ' + email + ' ยังเปิด Google Sheet "' + src.name + '" ไม่ได้ · ขอให้ผู้ดูแลแชร์ชีตนี้ให้อีเมลนี้แบบ "ผู้มีสิทธิ์อ่าน" (Viewer) แล้วกดลองใหม่');
+  }
+}
+
+// --- อ่านข้อมูลจาก Google Sheet ---
 
 /** แท็บข้อมูลคดี: ส่งเฉพาะคอลัมน์ใน CONFIG.CASES_COLUMNS (ไม่ส่งเลขหนังสือ / ลงวันที่ / คอลัมน์อื่นที่ไม่ใช้) */
 function readCasesTabs_(ss) {
@@ -213,7 +341,7 @@ function readCasesTabs_(ss) {
   return out;
 }
 
-/** แท็บข้อมูลห้องปฏิบัติการ (ไม่มีข้อมูลส่วนบุคคล) — แท็บ "หมายเหตุ" ไม่มีก็ได้ */
+/** แท็บข้อมูลห้องปฏิบัติการ (ไม่มีข้อมูลส่วนบุคคล) — มีบางแท็บก็ได้ (เช่น ชีต Lot พัสดุที่มีแค่ "ข้อมูล Lot") */
 function readLabTabs_(ss) {
   var tz = ss.getSpreadsheetTimeZone(), out = {};
   CONFIG.LAB_TABS.forEach(function (name) {
@@ -223,6 +351,8 @@ function readLabTabs_(ss) {
     var cols = []; for (var i = 0; i < (values[0] || []).length; i++) cols.push(i);
     out[name] = tableOf_(values, cols, tz);
   });
+  if (!out['ข้อมูลเคส'] && !out['ข้อมูลงบ'] && !out['ข้อมูล Lot'])
+    throw new Error('ไม่พบแท็บ "ข้อมูลเคส", "ข้อมูลงบ" หรือ "ข้อมูล Lot" ในชีตนี้ (ชื่อแท็บอาจถูกเปลี่ยน)');
   return out;
 }
 

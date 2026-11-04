@@ -6,6 +6,7 @@
  *   LINE นับโควตาตามจำนวนผู้รับต่อคำขอ ไม่ใช่ตามจำนวนข้อความในคำขอ → ม.ค. ก็ยังนับ ≈ จำนวนสมาชิกกลุ่ม
  * - ถ้าวันที่ 1 ส่งไม่สำเร็จ (เช่น LINE ล่ม) trigger วันที่ 2–3 จะลองส่งงวดเดิมอีก (ไม่ส่งซ้ำงวดที่ส่งแล้ว)
  * - ตัวเลขทั้งหมดมาจาก Stats.summarize() ชุดเดียวกับ Dashboard (ไม่มีตัวคำนวณซ้ำในไฟล์นี้)
+ * - ข้อมูลอ่านจาก "ชีตหลัก" (ตั้งในหน้า แหล่งข้อมูล ของ Dashboard) · ยังไม่ตั้ง/เปิดไม่ได้ = ไม่ส่ง และลองใหม่วันถัดไป (ถึงวันที่ 3)
  * - เนื้อหา: จำนวนคดี, ของกลาง, คดีแยกประเภท, ผู้ตรวจแต่ละคนแยกประเภท ("ไม่ระบุ" เมื่อว่าง), ลิงก์ Dashboard
  *   ไม่มีเลขคดี สภ. หรือรายละเอียดรายคดี
  *
@@ -79,7 +80,10 @@ function dailySummaryJob(e, nowForTest) {
   try {
     var due = duePeriods_(now, props);          // อ่านใหม่หลังได้ lock (อีกงานอาจส่งไปแล้ว)
     if (!due.month && !due.year) return 'nothing-due';
-    var cases = loadCaseRecords_(), url = props.getProperty('DASHBOARD_URL') || '';
+    var cases;
+    try { cases = loadCaseRecords_(); }
+    catch (x) { console.warn('สรุปอัตโนมัติ: ' + (x && x.message)); return 'no-main-source'; }
+    var url = props.getProperty('DASHBOARD_URL') || '';
     var periods = [due.month, due.year].filter(Boolean);
     var texts = periods.map(function (r) { return formatSummary_(Stats.summarize(cases, r), url); });
     var keys = periods.map(function (r) { return r.kind === 'year' ? r.start.slice(0, 4) : r.start.slice(0, 7); });
@@ -117,7 +121,7 @@ function retryKeyFor_(s) {
 
 /** [รันใน editor] ดูข้อความสรุปเดือน (ปี ค.ศ. หรือ พ.ศ., เดือน 1–12) โดยไม่ส่ง เช่น previewSummary(2569, 10) */
 function previewSummary(yyyy, mm) {
-  requireAdmin_();
+  requireOwner_();
   var now = Stats.todayYmd(new Date()).split('-').map(Number);
   var y = +yyyy || now[0], m = +mm || now[1];
   if (y > 2400) y -= 543;
@@ -131,7 +135,7 @@ function previewSummary(yyyy, mm) {
 
 /** [รันใน editor] ดูข้อความสรุปปี (ค.ศ. หรือ พ.ศ.) โดยไม่ส่ง เช่น previewYearSummary(2568) */
 function previewYearSummary(yyyy) {
-  requireAdmin_();
+  requireOwner_();
   var y = +yyyy || (+Stats.todayYmd(new Date()).slice(0, 4) - 1);
   if (y > 2400) y -= 543;
   var text = formatSummary_(Stats.summarize(loadCaseRecords_(), Stats.yearRange(y)),
@@ -142,7 +146,7 @@ function previewYearSummary(yyyy) {
 
 /** [รันใน editor] สร้าง trigger รายวัน 1 ตัว (รันซ้ำได้ ไม่สร้างซ้ำ) */
 function installTriggers() {
-  requireAdmin_();
+  requireOwner_();
   var mine = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === SUMMARY.HANDLER; });
   mine.slice(1).forEach(function (t) { ScriptApp.deleteTrigger(t); });   // ถ้าเคยสร้างเกิน ลบส่วนเกิน
   if (mine.length) { Logger.log('มี trigger อยู่แล้ว 1 ตัว (ไม่สร้างเพิ่ม)'); return 'exists'; }
@@ -154,7 +158,7 @@ function installTriggers() {
 
 /** [รันใน editor] ลบ trigger สรุปอัตโนมัติ (หยุดส่ง) */
 function removeTriggers() {
-  requireAdmin_();
+  requireOwner_();
   var n = 0;
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === SUMMARY.HANDLER) { ScriptApp.deleteTrigger(t); n++; } });
   Logger.log('ลบ trigger ' + n + ' ตัว'); return n;

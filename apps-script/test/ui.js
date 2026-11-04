@@ -10,7 +10,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const JSZIP = (() => { try { return require.resolve('jszip/dist/jszip.min.js', { paths: [path.dirname(require.resolve('playwright')), '/opt/node-tools/node_modules'] }); } catch (e) { return null; } })();
 const BASE = 'https://dash.test/';
 
-async function run({ results, OUT, EXP, statsOf, botSamples }) {
+async function run({ results, OUT, EXP, statsOf, botSamples, live }) {
   const SHOTS = process.env.SHOT_DIR || path.join(OUT, 'shots');
   fs.mkdirSync(SHOTS, { recursive: true });
   const books = JSON.parse(fs.readFileSync(path.join(OUT, 'books.json'), 'utf8'));
@@ -35,7 +35,19 @@ async function run({ results, OUT, EXP, statsOf, botSamples }) {
       if (u.includes('/jszip/3.10.1/jszip.min.js') && JSZIP) return route.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(JSZIP) });
       issues.push('unexpected request ' + u); return route.fulfill({ status: 404, body: '' });
     });
-    await ctx.addInitScript(b => {   // google.script.run จำลอง: ส่งผลแบบ async ผ่าน JSON เหมือนของจริง
+    if (opts.live) {   // ต่อกับโค้ดเซิร์ฟเวอร์จริง (.gs ใน mock ของ Node) แทนข้อมูลคงที่
+      const { g, email } = opts.live;
+      await ctx.exposeFunction('__gas', (fn, args) => {
+        if (typeof fn !== 'string' || fn.endsWith('_') || typeof g[fn] !== 'function') return { err: 'Script function not found: ' + fn };
+        g.__state.email = email;
+        try { return { ok: JSON.parse(JSON.stringify(g[fn](...args) ?? null)) }; } catch (e) { return { err: e.message }; }
+      });
+      await ctx.addInitScript(() => {
+        const mk = (ok, fail) => new Proxy({}, { get: (_, k) => k === 'withSuccessHandler' ? h => mk(h, fail) : k === 'withFailureHandler' ? h => mk(ok, h)
+          : (...a) => { window.__gas(k, a).then(r => setTimeout(() => (r.err != null ? fail && fail(new Error(r.err)) : ok && ok(r.ok)), 20)); } });
+        window.google = { script: { get run() { return mk(null, null); } } };
+      });
+    } else await ctx.addInitScript(b => {   // google.script.run จำลอง: ส่งผลแบบ async ผ่าน JSON เหมือนของจริง
       const srv = { getSources: () => b.sources, getBook: k => { if (!b[k]) throw new Error('ไม่รู้จักแหล่งข้อมูล'); return b[k]; } };
       const mk = (ok, fail) => new Proxy({}, { get: (_, k) => k === 'withSuccessHandler' ? h => mk(h, fail) : k === 'withFailureHandler' ? h => mk(ok, h)
         : (...a) => setTimeout(() => { try { const r = JSON.parse(JSON.stringify(srv[k](...a))); ok && ok(r); } catch (e) { fail && fail(e); } }, 30) });
@@ -191,6 +203,85 @@ async function run({ results, OUT, EXP, statsOf, botSamples }) {
     });
     await shot(o, 'orig-cases-overview-all');
     await o.context().close();
+
+    // ---------- แหล่งข้อมูล / ผู้ใช้ ที่ผู้ดูแลจัดการ (หน้าเว็บ ↔ โค้ดเซิร์ฟเวอร์จริงใน mock) ----------
+    if (live) {
+      const g = live.make();
+      const SRC = process.env.SRC_SHOT_DIR || SHOTS;
+      const sshot = async (page, name, el) => { const f = path.join(SRC, name + '.png'); if (el) await (await page.$(el)).screenshot({ path: f }); else await page.screenshot({ path: f, fullPage: true }); shots.push(f); };
+      const waitIdle = page => page.waitForFunction(() => !document.querySelector('[aria-busy="true"]')).then(() => settle(page));
+      const a = await newPage({ live: { g, email: live.OWNER } });
+      await a.goto(BASE + '#sources'); await a.waitForSelector('.srcs li .badge.main'); await settle(a);
+      await check('ผู้ดูแล: หน้าแหล่งข้อมูล', 'มีปุ่มเพิ่ม/แก้ไข/ลบ/ตั้งชีตหลัก · ชีตหลักติดป้าย · ลบชีตหลักไม่ได้ · มีเมนู ผู้ใช้', async () => {
+        const t = await a.textContent('#view'); for (const w of ['เพิ่ม Google Sheet', 'ชีตหลัก', 'แก้ไข', 'Lot พัสดุ', 'เปิดชีต']) if (!t.includes(w)) throw new Error('ไม่มี ' + w);
+        const mainRow = await a.$eval('.srcs li:has(.badge.main)', li => [...li.querySelectorAll('[data-act]')].map(b => b.dataset.act));
+        if (mainRow.includes('del') || mainRow.includes('main')) throw new Error('แถวชีตหลักมีปุ่ม ' + mainRow);
+        if (!(await a.$('#nav a[href="#users"]'))) throw new Error('ไม่มีเมนู ผู้ใช้');
+        return (await a.$$eval('.srcs li h3', h => h.map(x => x.textContent.replace(/\s+/g, ' ').trim()))).join(' | ');
+      });
+      await sshot(a, 'src-admin-sources');
+      await check('ผู้ดูแล: เพิ่มลิงก์ชีตที่ไม่ตรงแม่แบบ', 'ผลตรวจ "ใช้ไม่ได้" ภาษาไทย · ปุ่มบันทึกยังกดไม่ได้', async () => {
+        await a.click('[data-act="add"]'); await a.waitForSelector('#formCard');
+        await a.fill('#mUrl', live.link(live.XID.wrong)); await a.click('#mCheck'); await a.waitForSelector('#mRes .msg'); await waitIdle(a);
+        const t = await a.textContent('#mRes'); if (!t.includes('ไม่ตรงแม่แบบ')) throw new Error(t);
+        if (!(await a.$eval('#mSave', b => b.disabled))) throw new Error('บันทึกได้ทั้งที่ชีตใช้ไม่ได้'); return t.slice(0, 120);
+      });
+      await check('ผู้ดูแล: เพิ่มแม่แบบชีต Lot พัสดุ (มีข้อมูลจำลอง)', 'ผลตรวจแสดงแท็บ/จำนวนแถว/แท็บที่ไม่มี → บันทึก → อยู่ในรายการ', async () => {
+        await a.fill('#mUrl', live.link(live.XID.tLotF)); await a.fill('#mName', 'Lot พัสดุ (แม่แบบ)'); await a.click('#mCheck');
+        await a.waitForSelector('#mRes .msg.ok'); await waitIdle(a);
+        const rows = await a.$$eval('#mRes tbody tr', tr => tr.map(r => r.textContent.replace(/\s+/g, ' ').trim()));
+        await sshot(a, 'src-add-dialog', '#formCard');
+        await a.click('#mSave'); await a.waitForFunction(() => !document.querySelector('#formCard') && document.body.textContent.includes('Lot พัสดุ (แม่แบบ)'));
+        return rows.join(' | ');
+      });
+      await check('ผู้ดูแล: หน้าผู้ใช้ เพิ่มผู้ใช้ใหม่', 'เจ้าของปักหมุด ลบไม่ได้ · เพิ่มแล้วขึ้นในรายการทันที', async () => {
+        await go(a, '#users'); await a.waitForSelector('#pList');
+        await a.click('[data-act="padd"]'); await a.waitForSelector('#pCard'); await a.fill('#pEmail', 'Newcomer@Example.org'); await a.fill('#pName', 'เจ้าหน้าที่ จ'); await a.fill('#pNote', 'ทดลองงาน');
+        await a.click('#pSave'); await a.waitForFunction(() => !document.querySelector('#pCard') && document.querySelector('#pList').textContent.includes('newcomer@example.org'));
+        const ownerActs = await a.$eval('#pList li:first-child', li => li.querySelectorAll('[data-act]').length); if (ownerActs) throw new Error('แถวเจ้าของมีปุ่ม');
+        await settle(a); return (await a.$$eval('#pList li h3', h => h.map(x => x.textContent.replace(/\s+/g, ' ').trim()))).join(' | ');
+      });
+      await a.waitForSelector('#toast', { state: 'hidden', timeout: 8000 }).catch(() => {}); await sshot(a, 'src-users-admins');
+      await check('ผู้ดูแล: ลบเจ้าของ (เรียกเซิร์ฟเวอร์ตรง ๆ แม้ไม่มีปุ่ม)', 'เซิร์ฟเวอร์ปฏิเสธ', async () => {
+        const r = await a.evaluate(o => new Promise(res => google.script.run.withSuccessHandler(() => res('ok')).withFailureHandler(e => res(e.message)).adminRemoveUser(o)), live.OWNER);
+        if (r === 'ok') throw new Error('ลบได้'); return r;
+      });
+      await a.click('#themeBtn'); await settle(a); await sshot(a, 'src-users-dark'); await a.click('#themeBtn');
+      await a.context().close();
+
+      const u = await newPage({ live: { g, email: live.ALLOWED } });
+      await u.goto(BASE + '#sources'); await u.waitForSelector('.srcs li'); await settle(u);
+      await check('ผู้ใช้ทั่วไป: หน้าแหล่งข้อมูล', 'ไม่มีปุ่มผู้ดูแล ไม่มีเมนู ผู้ใช้ ไม่มีลิงก์/Sheet ID ในหน้า · เปิด #users แล้วไม่เห็นรายชื่อ', async () => {
+        if (await u.$('[data-act="add"],[data-act="edit"],[data-act="main"],#nav a[href="#users"]')) throw new Error('มีปุ่ม/เมนูผู้ดูแล');
+        const html = await u.evaluate(() => { const d = document.body.cloneNode(true); d.querySelectorAll('script').forEach(x => x.remove()); return d.innerHTML; }); for (const bad of ['docs.google.com', ...Object.values(live.XID), 'mock-cases-sheet-id']) if (html.includes(bad)) throw new Error('รั่ว ' + bad);
+        await sshot(u, 'src-nonadmin-sources');
+        await u.evaluate(() => { location.hash = '#users'; }); await settle(u); await settle(u);
+        if (await u.$('#pList')) throw new Error('เห็นรายชื่อผู้ใช้');
+      });
+      await check('ผู้ใช้ทั่วไป: ชีตที่ยังไม่ได้รับแชร์', 'การ์ดข้อความไทยบอกชื่อชีตและให้ขอสิทธิ์ ไม่ crash', async () => {
+        const opt = await u.$$eval('#srcSel option', o => o.map(x => [x.value, x.textContent])); const lab = opt.find(o => o[1] === 'งานตรวจ DNA');
+        await u.evaluate(() => { location.hash = '#overview'; }); await settle(u); await u.selectOption('#srcSel', lab[0]); await u.waitForSelector('#view .msg.err'); const t = await u.textContent('#view .msg.err');
+        if (!t.includes('ผู้มีสิทธิ์อ่าน') || !t.includes('งานตรวจ DNA')) throw new Error(t); return t.replace(/\s+/g, ' ').slice(0, 140);
+      });
+      await check('ผู้ใช้ทั่วไป: ชีต Lot พัสดุอย่างเดียว', 'เมนูมีเฉพาะ Lot พัสดุ + แหล่งข้อมูล · แจ้งแท็บที่ไม่มีเป็นภาษาไทย · กราฟมีตัวเลขกำกับ', async () => {
+        const opt = await u.$$eval('#srcSel option', o => o.map(x => [x.value, x.textContent])); const lot = opt.find(o => o[1] === 'Lot พัสดุ (แม่แบบ)');
+        await u.selectOption('#srcSel', lot[0]); await u.waitForSelector('#nav a[data-v="lot"]'); await u.evaluate(() => { location.hash = '#lot'; }); await u.waitForSelector('[data-flash="l_n"]'); await settle(u);
+        const nav = await u.$$eval('#nav a', x => x.map(a => a.dataset.v)); if (nav.join() !== 'lot,sources') throw new Error('เมนู ' + nav);
+        const w = await u.textContent('#view .msg.warn'); if (!w.includes('ไม่มีแท็บ "ข้อมูลเคส"')) throw new Error(w);
+        const vl = await u.$$eval('.chart svg text.vl', t => t.length); if (!vl) throw new Error('กราฟไม่มีตัวเลขกำกับ');
+        await sshot(u, 'src-lot-only'); return `เมนู ${nav.join(', ')} · ตัวเลขบนกราฟ ${vl} ป้าย`;
+      });
+      await u.context().close();
+
+      const mm = await newPage({ live: { g, email: live.ADMIN2 }, viewport: { width: 390, height: 844 }, dpr: 2 });
+      await mm.goto(BASE + '#sources'); await mm.waitForSelector('.srcs li .badge.main'); await settle(mm);
+      await check('ผู้ดูแลคนที่ 2 บนมือถือ 390px', 'หน้าแหล่งข้อมูลและผู้ใช้ไม่เลื่อนแนวนอน · ผู้ดูแลที่ไม่ใช่เจ้าของจัดการได้', async () => {
+        for (const h of ['#sources', '#users']) { await go(mm, h); if (h === '#users') await mm.waitForSelector('#pList');
+          const sw = await mm.evaluate(() => document.documentElement.scrollWidth); if (sw > 392) throw new Error(h + ' scrollWidth ' + sw); }
+        await mm.click('[data-act="padd"]'); await mm.waitForSelector('#pCard'); await sshot(mm, 'src-mobile-users');
+      });
+      await mm.context().close();
+    }
   } finally {
     await browser.close();
   }

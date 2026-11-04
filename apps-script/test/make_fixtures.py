@@ -110,6 +110,48 @@ def expected(cases_grid):
     }
 
 
+TEMPLATES = ROOT / "templates"
+
+
+def template_grid(ws):
+    """แท็บของแม่แบบ → grid ที่ Apps Script จะเห็น: สูตรที่ยังไม่มีข้อมูลให้ผลเป็นค่าว่าง"""
+    out = []
+    for row in ws.iter_rows(values_only=True):
+        out.append(["" if (isinstance(v, str) and v.startswith("=")) else cell(v) for v in row])
+    return out
+
+
+def fill(grid, sample):
+    """ใส่แถวข้อมูลจำลองลงแม่แบบตามชื่อหัวคอลัมน์ (คอลัมน์ที่แม่แบบไม่มีถูกตัดทิ้ง)"""
+    head, src = grid[0], sample[0]
+    ix = {h: i for i, h in enumerate(src)}
+    out = [list(r) for r in grid]
+    for n, r in enumerate(sample[1:], start=1):
+        while len(out) <= n:
+            out.append([""] * len(head))
+        row = out[n] + [""] * (len(head) - len(out[n]))
+        for j, h in enumerate(head):
+            if h in ix and ix[h] < len(r):
+                row[j] = r[ix[h]]
+        out[n] = row
+    return out
+
+
+def dump_templates(sheets):
+    """แม่แบบใน templates/ (สร้างโดย qa-privacy) แบบว่าง และแบบใส่ข้อมูลจำลอง · ไม่มีโฟลเดอร์ = ข้าม"""
+    files = {"cases": "แม่แบบ-ชีตคดี.xlsx", "lab": "แม่แบบ-ชีตงานตรวจ.xlsx", "lot": "แม่แบบ-ชีต-Lot-พัสดุ.xlsx"}
+    if not all((TEMPLATES / f).exists() for f in files.values()):
+        return {}
+    out = {}
+    for key, f in files.items():
+        wb = load_workbook(TEMPLATES / f)
+        empty = {ws.title: template_grid(ws) for ws in wb.worksheets}
+        src = sheets["cases"] if key == "cases" else sheets["lab"]
+        filled = {t: (fill(g, src[t]) if t in src and t != "คำอธิบาย" else g) for t, g in empty.items()}
+        out[key] = {"empty": empty, "filled": filled}
+    return out
+
+
 def main():
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent / ".out"
     out.mkdir(parents=True, exist_ok=True)
@@ -117,6 +159,7 @@ def main():
     (out / "sheets.json").write_text(json.dumps(sheets, ensure_ascii=False), encoding="utf-8")
     exp = expected(sheets["cases"]["ข้อมูลคดี"])
     exp["users"] = [r[0] for r in sheets["cases"]["ผู้ใช้"][1:] if r and r[0]]
+    (out / "templates.json").write_text(json.dumps(dump_templates(sheets), ensure_ascii=False), encoding="utf-8")
     (out / "expected.json").write_text(json.dumps(exp, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"fixtures → {out}")
 
