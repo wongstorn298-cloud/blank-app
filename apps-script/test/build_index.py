@@ -10,7 +10,9 @@
   - เพิ่มตัวเชื่อม google.script.run (serverBook) ที่คืนข้อมูลรูปเดียวกับตัวอ่านเดิม
   - หน้า "แหล่งข้อมูล" คงแบบเดิม (รายการ + dropdown มุมขวาบน + ฟอร์มเพิ่ม/เปลี่ยนชีตในหน้า) แต่ปรับเป็น:
     ผู้ดูแลเพิ่ม/แก้/ลบ/ตั้งชีตหลักผ่านเซิร์ฟเวอร์ (adminInspectSource → adminSaveSource ...) ผู้ใช้ทั่วไปเลือกได้อย่างเดียว
-  - เพิ่มหน้า "ผู้ใช้" (ผู้ดูแลเท่านั้น): เพิ่ม/ลบผู้ใช้ ตั้ง/เลิกผู้ดูแล
+  - เพิ่มหน้า "ผู้ใช้" (ผู้ดูแลเท่านั้น): เพิ่ม/ลบผู้ใช้ · ตั้ง/เลิก/แก้/ลบผู้ดูแลเฉพาะเจ้าของระบบ (Q44)
+  - ผู้ดูแลที่ไม่ใช่เจ้าของ: เตือนให้แชร์ชีตให้เจ้าของก่อนตั้งชีตหลักและในฟอร์มเพิ่มชีต (Q45)
+    เจ้าของเห็นแถบ "ชีตหลักถูกเปลี่ยนโดย …" เมื่อผู้ดูแลคนอื่นเปลี่ยนชีตหลัก (SR-5)
   - แม่แบบ lab: ชีตที่มีบางแท็บ (เช่น ชีต Lot พัสดุที่มีแค่ "ข้อมูล Lot") แสดงเฉพาะเมนูที่มีข้อมูล + ข้อความแจ้งแท็บที่ไม่มี
   - แท่งซ้อน (Lot / งบประมาณ) แสดงยอดรวมเหนือแท่ง
   - ดูไฟล์ Excel ในเครื่องได้เหมือนเดิม (โหลด JSZip เมื่อเลือกไฟล์เท่านั้น) แต่ตัด "เชื่อมไฟล์ในเครื่อง"
@@ -131,14 +133,18 @@ SEC6 = r"""   6) แหล่งข้อมูล: Google Sheet (อ่าน�
    ========================================================= */
 const S = { sources: [], active: null, M: null, tpl: null, fy: null, yr: 0, view: 'overview', lotQ: '', lotLimit: 25, pendF: 'all', pendLimit: 25, cm: 0, hideUn: false, drill: null,
   sig: '', prevKpi: {}, busy: false, gen: 0, error: '', email: '', refreshSec: 120,
-  admin: false, owner: '', notice: '', form: null, people: null, perr: '', pform: null, pq: '' };
+  admin: false, isOwner: false, owner: '', mainChange: null, confirmMain: null, notice: '', form: null, people: null, perr: '', pform: null, pq: '' };
 const cur = () => S.sources.find(s => s.id === S.active);
 const uid = () => 's' + Math.random().toString(36).slice(2, 8);
 const editing = () => (S.form && S.view === 'sources') || (S.pform && S.view === 'users');
 const fmtAt = iso => { const d = new Date(iso); return iso && !isNaN(d) ? d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : ''; };
+const fmtAtT = iso => { const d = new Date(iso); return iso && !isNaN(d) ? d.toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' น.' : ''; };
+/* Q45: ผู้ดูแลที่ไม่ใช่เจ้าของต้องแชร์ชีตให้เจ้าของระบบ (บอตอ่านชีตหลักในนามเจ้าของ) */
+const ownerShareMsg = () => `ต้องแชร์ชีตนี้ให้บัญชีเจ้าของระบบ${S.owner ? ` (<b>${esc(S.owner)}</b>)` : ''} ไม่เช่นนั้นบอตจะอ่านไม่ได้`;
+const withWarn = out => out.warning ? out.message + ' · ' + out.warning : out.message;
 function persist(){ try { if (S.active && !S.active.startsWith('file-')) localStorage.setItem('dna-src-as', S.active); } catch (e) {} }
 function applyInfo(info){
-  S.email = info.email || ''; S.admin = !!info.isAdmin; S.owner = info.owner || ''; S.refreshSec = Math.max(30, +info.refreshSeconds || 120);
+  S.email = info.email || ''; S.admin = !!info.isAdmin; S.isOwner = !!info.isOwner; S.owner = info.owner || ''; S.mainChange = info.mainChange || null; S.refreshSec = Math.max(30, +info.refreshSeconds || 120);
   if (info.notice) S.notice = info.notice;
   const old = new Map(S.sources.map(s => [s.id, s])), files = S.sources.filter(s => s.type === 'file');
   S.sources = (info.sources || []).map(x => { const id = 'srv-' + x.id, o = old.get(id), keep = o && o.rev === x.rev ? { state: o.state, err: o.err, at: o.at } : {};
@@ -155,7 +161,7 @@ async function seedSources(){
 /** หลังผู้ดูแลแก้รายการ: ใช้รายการใหม่ · แหล่งที่แสดงอยู่ถูกลบหรือเปลี่ยนลิงก์ = โหลดใหม่ */
 function afterChange(state, msg){
   const before = cur(), rev = before && before.rev;
-  applyInfo(state); fillSel(); if (msg) toast(msg, 4500);
+  applyInfo(state); fillSel(); if (msg) toast(msg, msg.includes('ต้องแชร์') ? 9000 : 4500);
   const now = cur();
   if (!now) { const d = S.sources.find(x => x.main) || S.sources[0]; if (d) return activate(d.id); S.active = null; S.M = null; S.tpl = null; return render(); }
   if (now.type === 'server' && now.rev !== rev) return activate(now.id);
@@ -210,7 +216,8 @@ function srcMeta(x){
   if (x.type === 'file') return 'ไฟล์ที่เลือกเอง (อยู่ในเครื่องนี้เท่านั้น ไม่ถูกส่งขึ้นเซิร์ฟเวอร์) · ' + esc(x.fileName || '');
   const menus = x.tpl === 'lab' && x.menus.length ? ' · เมนู: ' + x.menus.map(esc).join(' · ') : '';
   if (!S.admin) return 'Google Sheet (ส่วนตัว) อ่านผ่านเซิร์ฟเวอร์ Apps Script' + menus;
-  return `<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">เปิดชีต</a>${menus}${x.by ? ' · แก้ล่าสุดโดย ' + esc(x.by) + (x.added ? ' ' + esc(fmtAt(x.added)) : '') : ''}`;
+  const mc = x.main && S.mainChange ? ' · ตั้งเป็นชีตหลักโดย ' + esc(S.mainChange.by) + (S.mainChange.at ? ' ' + esc(fmtAtT(S.mainChange.at)) : '') : '';
+  return `<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">เปิดชีต</a>${menus}${x.by ? ' · แก้ล่าสุดโดย ' + esc(x.by) + (x.added ? ' ' + esc(fmtAt(x.added)) : '') : ''}${mc}`;
 }
 function viewSources(){
   const rows = S.sources.map(x => { const on = x.id === S.active, t = x.tpl && x.tpl !== 'auto' ? x.tpl : x.detected;
@@ -218,21 +225,22 @@ function viewSources(){
     const st = x.state === 'live' ? `<span class="badge ok">เชื่อมสด</span>` : x.state === 'lost' ? `<span class="badge bad">เชื่อมต่อไม่ได้</span>` : x.state === 'busy' ? '<span class="badge ok">กำลังโหลด…</span>' : '';
     const acts = [on ? '' : `<button class="btn sm" data-act="use" data-id="${esc(x.id)}">แสดง</button>`];
     if (S.admin && x.type === 'server') {
-      if (x.tpl === 'cases' && !x.main) acts.push(`<button class="btn sm ghost" data-act="main" data-id="${esc(x.id)}">ตั้งเป็นชีตหลัก</button>`);
+      if (x.tpl === 'cases' && !x.main && S.confirmMain !== x.id) acts.push(`<button class="btn sm ghost" data-act="${S.isOwner ? 'main' : 'main-ask'}" data-id="${esc(x.id)}">ตั้งเป็นชีตหลัก</button>`);
       acts.push(`<button class="btn sm ghost" data-act="edit" data-id="${esc(x.id)}">แก้ไข</button>`);
       if (!x.main) acts.push(`<button class="btn sm ghost danger" data-act="del" data-id="${esc(x.id)}">ลบ</button>`);
     }
     if (x.type === 'file') acts.push(`<button class="btn sm ghost danger" data-act="del" data-id="${esc(x.id)}">ลบ</button>`);
     return `<li class="src${on ? ' on' : ''}"><div><h3>${esc(x.name)} ${on ? '<span class="badge">กำลังแสดง</span>' : ''}${x.main ? '<span class="badge main" title="LINE bot และสรุปอัตโนมัติอ่านจากชีตนี้">ชีตหลัก</span>' : ''} ${kl ? `<span class="badge ok">${esc(kl)}</span>` : ''} ${st}</h3>
-      <p>${srcMeta(x)}</p>${x.err ? `<p class="err">${esc(x.err)}</p>` : ''}</div><div class="acts">${acts.join('')}</div></li>`; }).join('');
+      <p>${srcMeta(x)}</p>${x.err ? `<p class="err">${esc(x.err)}</p>` : ''}${S.confirmMain === x.id ? mainAsk(x) : ''}</div><div class="acts">${acts.join('')}</div></li>`; }).join('');
   const empty = S.admin ? '<li class="src"><div><h3>ยังไม่มีแหล่งข้อมูล</h3><p>กด "เพิ่ม Google Sheet" แล้ววางลิงก์ชีตคดี ชีตคดีชีตแรกจะถูกตั้งเป็นชีตหลักให้อัตโนมัติ</p></div></li>'
     : '<li class="src"><div><h3>ยังไม่มีแหล่งข้อมูล</h3><p>โปรดแจ้งผู้ดูแล Dashboard ให้เพิ่ม Google Sheet</p></div></li>';
   const add = S.admin ? `<button class="btn" data-act="add"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 2v10M2 7h10"/></svg>เพิ่ม Google Sheet</button>` : '';
   const info = S.M && S.tpl === 'lab' && S.M.notes.length ? `<section class="card span-12"><div class="card-h"><div><h2>หมายเหตุ สมมติฐาน และข้อมูลที่ควรตรวจสอบ</h2><p>อ่านจากแท็บ "หมายเหตุ" ของแหล่งข้อมูลที่แสดงอยู่</p></div></div><ul class="notes">${S.M.notes.map(([a, b]) => b == null ? `<li class="h">${esc(a)}</li>` : `<li><b>${esc(a)}</b><span>${esc(b)}</span></li>`).join('')}</ul></section>` : '';
-  const notice = S.notice ? `<div class="msg ok span-12" role="status">${esc(S.notice)} <button class="btn sm ghost" data-act="notice-ok" style="margin-left:6px">รับทราบ</button></div>` : '';
+  const notice = (S.notice ? `<div class="msg ok span-12" role="status">${esc(S.notice)} <button class="btn sm ghost" data-act="notice-ok" style="margin-left:6px">รับทราบ</button></div>` : '') + mainChangedBanner();
   const steps = S.admin ? `
       <li><b>เพิ่มชีต</b> เปิด Google Sheet แล้วคัดลอกลิงก์จากแถบที่อยู่ของเบราว์เซอร์ กด "เพิ่ม Google Sheet" วางลิงก์ แล้วกด "ตรวจชีต" ระบบเปิดชีตด้วยบัญชีของคุณ ตรวจแท็บและหัวคอลัมน์ตามแม่แบบ ก่อนให้บันทึก</li>
-      <li><b>ชีตหลัก</b> คือชีตคดีที่ LINE bot และสรุปรายเดือน/รายปีใช้ บอตอ่านชีตในนามเจ้าของสคริปต์${S.owner ? ` (<b>${esc(S.owner)}</b>)` : ''} เจ้าของจึงต้องเปิดชีตหลักได้</li>
+      <li><b>ชีตหลัก</b> คือชีตคดีที่ LINE bot และสรุปรายเดือน/รายปีใช้ บอตอ่านชีตในนามเจ้าของระบบ${S.owner ? ` (<b>${esc(S.owner)}</b>)` : ''} เจ้าของจึงต้องเปิดชีตหลักได้</li>
+      <li><b>แชร์ทุกชีตให้เจ้าของระบบ</b> ด้วย (อย่างน้อย "ผู้มีสิทธิ์อ่าน") ${S.isOwner ? 'ระบบตรวจแทนคุณไม่ได้เมื่อผู้ดูแลคนอื่นเพิ่มชีต · ตรวจได้โดยรัน <code>checkMainSheetAccess</code> ใน editor' : 'ระบบตรวจสิทธิ์ของเจ้าของแทนไม่ได้ ถ้าลืมแชร์ บอตจะตอบว่าอ่านข้อมูลไม่ได้'}</li>
       <li><b>แชร์ชีตทุกแหล่ง</b> ให้ผู้ใช้ทุกคนแบบ "ผู้มีสิทธิ์อ่าน" (ห้ามตั้ง "ทุกคนที่มีลิงก์") คนที่ไม่ได้รับแชร์จะเห็นข้อความแจ้งเฉพาะชีตนั้น รายชื่อผู้ใช้อยู่ในเมนู <a href="#users">ผู้ใช้</a></li>`
     : `<li><b>Google Sheet เป็นแบบส่วนตัว</b> เซิร์ฟเวอร์อ่านข้อมูลด้วยบัญชีของคุณ ต้องอยู่ในรายชื่อผู้ใช้และได้รับแชร์ชีตแบบ "ผู้มีสิทธิ์อ่าน"</li>
       <li><b>ต้องการชีตเพิ่ม หรือเปิดชีตไหนไม่ได้</b> แจ้งผู้ดูแล Dashboard พร้อมอีเมลของคุณ</li>`;
@@ -246,6 +254,19 @@ function viewSources(){
       <div><h4>${TPL.lab.short}</h4>แท็บ <code>ข้อมูลเคส</code> · <code>ข้อมูลงบ</code> · <code>ข้อมูล Lot</code> (และ <code>หมายเหตุ</code> ถ้ามี) มีไม่ครบก็ได้ ระบบแสดงเฉพาะเมนูของแท็บที่มี</div>
       <div><h4>Lot พัสดุ (ชีตแยก)</h4>แท็บ <code>ข้อมูล Lot</code> อย่างเดียว (และ <code>หมายเหตุ</code> ถ้ามี) แสดงเมนู Lot พัสดุ</div></div></section>
     <section class="card span-12"><div class="card-h"><div><h2>ดูจากไฟล์ Excel ในเครื่อง</h2><p>เลือกไฟล์ .xlsx หรือลากมาวางบนหน้านี้ เพื่อดูข้อมูลชั่วคราว ไฟล์ถูกอ่านในเบราว์เซอร์นี้เท่านั้น ไม่ถูกอัปโหลด</p></div></div><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn ghost" data-act="file">เลือกไฟล์ .xlsx</button></div></section>${info}</div>`;
+}
+
+/* ชีตหลักถูกเปลี่ยนโดยผู้ดูแลคนอื่น: แจ้งเจ้าของจนกว่าจะกดรับทราบ (จำในเบราว์เซอร์นี้ ต่อการเปลี่ยนแต่ละครั้ง) */
+function mainChangedBanner(){
+  const c = S.mainChange; if (!S.isOwner || !c || !c.by || c.by === S.email) return '';
+  let ack = ''; try { ack = localStorage.getItem('dna-main-ack') || ''; } catch (e) {}
+  if (ack === c.by + '|' + c.at) return '';
+  return `<div class="msg warn span-12" role="status"><b>ชีตหลักถูกเปลี่ยนโดย ${esc(c.by)} เมื่อ ${esc(fmtAtT(c.at))}</b> · ตรวจว่าเป็นชีตที่ถูกต้อง และบัญชีของคุณเปิดชีตนี้ได้ (LINE bot อ่านในนามบัญชีคุณ) โดยรัน <code>checkMainSheetAccess</code> ใน editor <button class="btn sm ghost" data-act="main-ack" style="margin-left:6px">รับทราบ</button></div>`;
+}
+/* ผู้ดูแลที่ไม่ใช่เจ้าของกด "ตั้งเป็นชีตหลัก": เตือนเรื่องแชร์ให้เจ้าของก่อนยืนยัน */
+function mainAsk(x){
+  return `<div class="msg warn" role="alert" style="margin-top:10px"><b>${ownerShareMsg()}</b><br>ระบบตรวจสิทธิ์ของเจ้าของแทนคุณไม่ได้ ตรวจในปุ่ม แชร์ ของชีตว่ามีอีเมลนี้แล้ว
+    <div class="acts-row" style="margin-top:10px"><button class="btn sm" data-act="main" data-id="${esc(x.id)}">แชร์แล้ว ตั้งเป็นชีตหลัก</button><button class="btn sm ghost" data-act="main-cancel">ยกเลิก</button></div></div>`;
 }
 
 /* ---- ฟอร์มเพิ่ม/แก้แหล่งข้อมูล (ผู้ดูแล): แสดงในหน้า ไม่ใช้หน้าต่างป๊อปอัป · ตรวจชีตก่อนบันทึกเสมอ ---- */
@@ -270,6 +291,7 @@ function formCard(){
   return `<section class="card span-12" id="formCard" aria-labelledby="mTitle"><div class="card-h"><div><h2 id="mTitle">${edit ? 'แก้ไข "' + esc(src.name) + '"' : 'เพิ่ม Google Sheet'}</h2><p>${edit ? 'เปลี่ยนชื่อที่แสดง หรือวางลิงก์ชีตใหม่เพื่อใช้แทนชีตเดิม (เว้นลิงก์ว่าง = ใช้ชีตเดิม)' : 'วางลิงก์ แล้วกด "ตรวจชีต" ระบบเปิดชีตด้วยบัญชีของคุณ ตรวจแท็บและหัวคอลัมน์ตามแม่แบบ ผลตรวจแสดงเฉพาะชื่อแท็บ จำนวนแถว และคอลัมน์ที่ขาด'}</p></div></div>
     <div class="f2"><div class="f"><label for="mUrl">ลิงก์ Google Sheet${edit ? ' (ใหม่)' : ''}</label><input id="mUrl" inputmode="url" autocomplete="off" spellcheck="false" value="${esc(f.link)}" placeholder="https://docs.google.com/spreadsheets/d/…/edit"><small>${edit ? `ชีตปัจจุบัน: <a href="${esc(src.url)}" target="_blank" rel="noopener noreferrer">เปิดชีต</a>` : 'คัดลอกจากแถบที่อยู่ของเบราว์เซอร์ขณะเปิดชีต · ไม่ต้องตั้ง "ทุกคนที่มีลิงก์"'}</small></div>
     <div class="f"><label for="mName">ชื่อที่แสดง</label><input id="mName" maxlength="60" autocomplete="off" value="${esc(f.name)}" placeholder="เช่น คดีส่งตรวจ DNA ปี 2569"><small>เว้นว่าง = ตั้งชื่อตามชนิดชีต</small></div></div>
+    ${S.isOwner ? '' : `<div class="msg warn" role="note" style="margin-top:14px">${ownerShareMsg()} · ทุกชีตในระบบต้องแชร์ให้เจ้าของ (อย่างน้อย "ผู้มีสิทธิ์อ่าน")</div>`}
     <div id="mRes" aria-live="polite">${f.result ? inspectHtml(f.result) : ''}</div>
     <div id="mMsg" class="msg err" role="alert" style="margin-top:14px" hidden></div>
     <div class="acts-row"><button class="btn ghost" id="mCheck">ตรวจชีต</button><button class="btn" id="mSave"${canSave(f) ? '' : ' disabled'}>บันทึก</button><button class="btn ghost" id="mCancel">ยกเลิก</button></div></section>`;
@@ -292,13 +314,13 @@ function bindForm(){
   };
   save.onclick = async () => {
     sync(); if (!canSave(f)) return; msg.hidden = true; busyBtn(save, true, 'กำลังบันทึก…');
-    try { const out = await RUN('adminSaveSource', { id: f.src ? f.src.key : '', link: f.link, name: f.name.trim() }); S.form = null; afterChange(out.state, out.message); }
+    try { const out = await RUN('adminSaveSource', { id: f.src ? f.src.key : '', link: f.link, name: f.name.trim() }); S.form = null; afterChange(out.state, withWarn(out)); }
     catch (e) { busyBtn(save, false); err(e.message); sync(); }
   };
 }
 async function adminAct(fn, arg, btn){
   if (btn) btn.disabled = true;
-  try { const out = await RUN(fn, arg); afterChange(out.state, out.message); }
+  try { const out = await RUN(fn, arg); S.confirmMain = null; afterChange(out.state, withWarn(out)); }
   catch (e) { toast(e.message, 6500); if (btn) btn.disabled = false; }
 }
 function removeSource(id, btn){
@@ -319,22 +341,24 @@ async function loadPeople(){
   try { S.people = await RUN('adminGetPeople'); S.perr = ''; } catch (e) { S.perr = e.message || String(e); }
   finally { loadPeople.p = false; } if (S.view === 'users') render();
 }
+/* Q44: ตั้ง/ถอด/แก้/ลบผู้ดูแล เฉพาะเจ้าของระบบ · ผู้ดูแลอื่นไม่เห็นปุ่มเหล่านี้ (เซิร์ฟเวอร์ตรวจซ้ำเสมอ) */
 function personRow(p, P){
-  const me = p.email === P.me, q = (p.name + ' ' + p.email + ' ' + p.note).toLowerCase();
+  const me = p.email === P.me, q = (p.name + ' ' + p.email + ' ' + p.note).toLowerCase(), own = !!P.isOwner;
   const meta = [p.name ? esc(p.email) : '', p.note ? esc(p.note) : '', p.by ? 'แก้ล่าสุดโดย ' + esc(p.by) + ' ' + esc(fmtAt(p.at)) : ''].filter(Boolean).join(' · ');
   return `<li class="src" data-q="${esc(q)}"><div><h3>${esc(p.name || p.email)} ${p.admin ? '<span class="badge ok">ผู้ดูแล</span>' : ''}${me ? '<span class="badge">คุณ</span>' : ''}</h3>${meta ? `<p>${meta}</p>` : ''}</div>
-    <div class="acts"><button class="btn sm ghost" data-act="${p.admin ? 'unadmin' : 'mkadmin'}" data-id="${esc(p.email)}">${p.admin ? 'เลิกเป็นผู้ดูแล' : 'ตั้งเป็นผู้ดูแล'}</button><button class="btn sm ghost" data-act="pedit" data-id="${esc(p.email)}">แก้ไข</button><button class="btn sm ghost danger" data-act="pdel" data-id="${esc(p.email)}"${me ? ' data-self="1"' : ''}>ลบ</button></div></li>`;
+    <div class="acts">${!own && p.admin ? '<span class="muted" style="font-size:13px">จัดการได้เฉพาะเจ้าของระบบ</span>'
+      : `${own ? `<button class="btn sm ghost" data-act="${p.admin ? 'unadmin' : 'mkadmin'}" data-id="${esc(p.email)}">${p.admin ? 'เลิกเป็นผู้ดูแล' : 'ตั้งเป็นผู้ดูแล'}</button>` : ''}<button class="btn sm ghost" data-act="pedit" data-id="${esc(p.email)}">แก้ไข</button><button class="btn sm ghost danger" data-act="pdel" data-id="${esc(p.email)}"${me ? ' data-self="1"' : ''}>ลบ</button>`}</div></li>`;
 }
 function viewUsers(){
   if (!S.people && !S.perr) { loadPeople(); return '<div class="card empty">กำลังโหลดรายชื่อ…</div>'; }
   if (S.perr) return `<div class="card"><div class="msg err"><b>โหลดรายชื่อไม่ได้</b><br>${esc(S.perr)}</div><div class="acts-row"><button class="btn" data-act="people-retry">ลองใหม่</button></div></div>`;
   const P = S.people, nAdm = P.people.filter(p => p.admin).length + (P.owner ? 1 : 0);
-  const owner = P.owner ? `<li class="src"><div><h3>${esc(P.owner)} <span class="badge main">เจ้าของ</span><span class="badge ok">ผู้ดูแล</span>${P.owner === P.me ? '<span class="badge">คุณ</span>' : ''}</h3><p>เจ้าของสคริปต์ (ADMIN_EMAIL) เป็นผู้ดูแลเสมอ ลบหรือลดสิทธิ์ในหน้านี้ไม่ได้</p></div><div class="acts"></div></li>`
+  const owner = P.owner ? `<li class="src"><div><h3>${esc(P.owner)} <span class="badge main">เจ้าของ</span><span class="badge ok">ผู้ดูแล</span>${P.owner === P.me ? '<span class="badge">คุณ</span>' : ''}</h3><p>เจ้าของระบบ (ADMIN_EMAIL) เป็นผู้ดูแลเสมอ ลบหรือลดสิทธิ์ในหน้านี้ไม่ได้ และเป็นคนเดียวที่ตั้งหรือถอดผู้ดูแลได้</p></div><div class="acts"></div></li>`
     : '<li class="src"><div><p class="err">ยังไม่ได้ตั้ง ADMIN_EMAIL (อีเมลเจ้าของ) ใน Script Properties</p></div></li>';
   const search = P.people.length > 8 ? `<input class="search" id="pQ" type="search" placeholder="ค้นหาชื่อ / อีเมล" value="${esc(S.pq)}" aria-label="ค้นหาผู้ใช้">` : '';
   const shares = P.sources.length ? P.sources.map(s => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.name)}</a></li>`).join('') : '<li>ยังไม่มีแหล่งข้อมูล</li>';
   return `<div class="grid">${S.pform ? personForm() : ''}
-    <section class="card span-12"><div class="card-h"><div><h2>ผู้ใช้และผู้ดูแล</h2><p>${n0(P.people.length + (P.owner ? 1 : 0))} คนเปิด Dashboard ได้ · ผู้ดูแล ${n0(nAdm)} คน (รวมเจ้าของ) จัดการแหล่งข้อมูลและรายชื่อนี้ได้</p></div>
+    <section class="card span-12"><div class="card-h"><div><h2>ผู้ใช้และผู้ดูแล</h2><p>${n0(P.people.length + (P.owner ? 1 : 0))} คนเปิด Dashboard ได้ · ผู้ดูแล ${n0(nAdm)} คน (รวมเจ้าของ) จัดการแหล่งข้อมูลและผู้ใช้ทั่วไปได้${P.isOwner ? '' : ' · ตั้งหรือถอดผู้ดูแลได้เฉพาะเจ้าของระบบ'}</p></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">${search}<button class="btn" data-act="padd"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 2v10M2 7h10"/></svg>เพิ่มผู้ใช้</button></div></div>
       <ul class="srcs" id="pList">${owner}${P.people.map(p => personRow(p, P)).join('')}</ul>${P.people.length ? '' : '<p class="muted" style="font-size:13px">ยังไม่มีผู้ใช้อื่น · กด "เพิ่มผู้ใช้" แล้วใส่อีเมลบัญชี Google</p>'}</section>
     <section class="card span-7"><div class="card-h"><div><h2>หลังเพิ่มผู้ใช้ ต้องแชร์ชีตด้วย</h2><p>Google ตรวจสิทธิ์อ่านชีตอีกชั้น คนที่ไม่ได้รับแชร์จะเปิดชีตนั้นไม่ได้</p></div></div><ol class="steps">
@@ -344,7 +368,8 @@ function viewUsers(){
       <li>เมื่อลบผู้ใช้ ให้นำอีเมลออกจากการแชร์ของทุกชีตด้วย</li></ol><ul class="steps" style="list-style:disc">${shares}</ul></section>
     <section class="card span-5"><div class="card-h"><div><h2>ผู้ดูแลทำอะไรได้</h2></div></div><ul class="hl">
       <li><span>เพิ่ม แก้ไข ลบแหล่งข้อมูล และตั้งชีตหลัก</span><b>ผู้ดูแล</b></li>
-      <li><span>เพิ่ม ลบผู้ใช้ ตั้ง/เลิกผู้ดูแลคนอื่น</span><b>ผู้ดูแล</b></li>
+      <li><span>เพิ่ม แก้ไข ลบผู้ใช้ทั่วไป</span><b>ผู้ดูแล</b></li>
+      <li><span>ตั้ง เลิก แก้ไข ลบผู้ดูแล</span><b>เจ้าของระบบ</b></li>
       <li><span>ดูทุกแหล่งข้อมูลที่ได้รับแชร์</span><b>ทุกคน</b></li>
       <li><span>ต้องมีผู้ดูแลอย่างน้อย 1 คน · เจ้าของลบไม่ได้</span><b>ระบบกันไว้</b></li></ul></section></div>`;
 }
@@ -354,7 +379,7 @@ function personForm(){
     <div class="f3"><div class="f"><label for="pEmail">อีเมล</label><input id="pEmail" type="email" inputmode="email" autocomplete="off" spellcheck="false" maxlength="254" value="${esc(f.email)}"${edit ? ' readonly' : ''} placeholder="name@gmail.com"></div>
     <div class="f"><label for="pName">ชื่อ</label><input id="pName" maxlength="60" autocomplete="off" value="${esc(f.name)}" placeholder="เช่น เจ้าหน้าที่ ก"></div>
     <div class="f"><label for="pNote">หมายเหตุ</label><input id="pNote" maxlength="100" autocomplete="off" value="${esc(f.note)}" placeholder="เช่น ตำแหน่ง / หน่วย"></div></div>
-    <label class="ck"><input type="checkbox" id="pAdm"${f.admin ? ' checked' : ''}> เป็นผู้ดูแล (จัดการแหล่งข้อมูลและรายชื่อผู้ใช้ได้)</label>
+    ${S.people && S.people.isOwner ? `<label class="ck"><input type="checkbox" id="pAdm"${f.admin ? ' checked' : ''}> เป็นผู้ดูแล (จัดการแหล่งข้อมูลและผู้ใช้ทั่วไปได้)</label>` : '<p class="muted" style="font-size:13px;margin:12px 0 0">เพิ่มเป็นผู้ใช้ทั่วไป · ถ้าต้องการให้เป็นผู้ดูแล แจ้งเจ้าของระบบ</p>'}
     <div id="pMsg" class="msg err" role="alert" style="margin-top:14px" hidden></div>
     <div class="acts-row"><button class="btn" id="pSave">บันทึก</button><button class="btn ghost" id="pCancel">ยกเลิก</button></div></section>`;
 }
@@ -365,16 +390,18 @@ function openPForm(email){
 }
 function bindPForm(){
   const f = S.pform, msg = $('#pMsg'), save = $('#pSave');
-  const read = () => { f.email = $('#pEmail').value.trim(); f.name = $('#pName').value; f.note = $('#pNote').value; f.admin = $('#pAdm').checked; };
+  const adm = $('#pAdm');
+  const read = () => { f.email = $('#pEmail').value.trim(); f.name = $('#pName').value; f.note = $('#pNote').value; if (adm) f.admin = adm.checked; };
   ['#pEmail', '#pName', '#pNote'].forEach(k => { $(k).oninput = read; $(k).onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); save.click(); } }; });
-  $('#pAdm').onchange = read;
+  if (adm) adm.onchange = read;
   const close = () => { S.pform = null; render(); };
   $('#pCancel').onclick = close; $('#pCard').onkeydown = e => { if (e.key === 'Escape') close(); };
   save.onclick = async () => {
     read(); msg.hidden = true;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) { msg.textContent = 'อีเมลไม่ถูกต้อง · ตัวอย่าง: name@gmail.com'; msg.hidden = false; $('#pEmail').focus(); return; }
     busyBtn(save, true, 'กำลังบันทึก…');
-    try { const out = await RUN('adminSaveUser', { email: f.email, name: f.name, note: f.note, admin: f.admin, edit: f.edit }); S.pform = null; peopleDone(out); }
+    const body = { email: f.email, name: f.name, note: f.note, edit: f.edit }; if (adm) body.admin = f.admin;
+    try { const out = await RUN('adminSaveUser', body); S.pform = null; peopleDone(out); }
     catch (e) { busyBtn(save, false); msg.textContent = e.message; msg.hidden = false; }
   };
 }
@@ -433,6 +460,9 @@ s = rep(s, """  if (a === 'add') openForm(null);
 """, """  if (a === 'add') openForm(null);
   else if (a === 'edit') openForm(S.sources.find(s => s.id === id));
   else if (a === 'main') adminAct('adminSetMain', (S.sources.find(s => s.id === id) || {}).key, b);
+  else if (a === 'main-ask') { S.confirmMain = id; render(); const c = document.querySelector('[data-act="main-cancel"]'); if (c) c.closest('.msg').scrollIntoView({ block: 'nearest' }); }
+  else if (a === 'main-cancel') { S.confirmMain = null; render(); }
+  else if (a === 'main-ack') { const c = S.mainChange; try { if (c) localStorage.setItem('dna-main-ack', c.by + '|' + c.at); } catch (e) {} render(); }
   else if (a === 'use') { activate(id); }
   else if (a === 'retry') { if (S.active) activate(S.active); else boot(); }
   else if (a === 'file') $('#file').click();

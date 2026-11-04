@@ -65,12 +65,17 @@ function duePeriods_(now, props) {
 /**
  * ตัวที่ trigger รายวันเรียก · ส่งเฉพาะเมื่อมาจาก trigger ของโปรเจกต์นี้จริง
  * (กันผู้ใช้ Dashboard เรียกผ่าน google.script.run) — ทดสอบส่งด้วยมือให้ใช้ preview* แทน
+ * เงื่อนไข (SR-4): e เป็น event object ที่มี triggerUid ของ trigger รายวันของโปรเจกต์นี้ (isOwnTrigger_)
+ *   + ถ้ารู้อีเมลผู้เรียก (active user) ต้องเป็นเจ้าของ · ถ้ารู้บัญชีที่สคริปต์ทำงานในนาม ต้องเป็นเจ้าของ
+ *   ความเสี่ยงที่เหลือ: ผู้ที่ไม่ล็อกอินเปิดลิงก์บอต (Execute as Me) แล้วเรียก google.script.run พร้อม triggerUid ที่ถูกต้อง
+ *   (ไม่มีฟังก์ชันใดเปิดเผยค่านี้) จะสั่งส่งสรุปงวดที่ถึงกำหนดและยังไม่ส่งได้เร็วขึ้นภายในวันที่ 1–3 เท่านั้น
+ *   เนื้อหาเดียวกับที่ trigger จะส่ง ส่งซ้ำไม่ได้ (SUMMARY_SENT_* + retry key) และไม่ได้ข้อมูลกลับ
  * @param {object} e event ของ time-driven trigger (มี triggerUid)
  * @param {Date=} nowForTest ใช้ในชุดทดสอบเท่านั้น
  * @return {string} สิ่งที่ทำ
  */
 function dailySummaryJob(e, nowForTest) {
-  if (!isOwnTrigger_(e)) return 'refused-not-trigger';
+  if (!isOwnTrigger_(e) || !callerMayRunJob_()) return 'refused-not-trigger';
   var now = nowForTest && typeof nowForTest.getTime === 'function' ? new Date(nowForTest.getTime()) : new Date();
   var props = PropertiesService.getScriptProperties();
   if (!duePeriods_(now, props).month && !duePeriods_(now, props).year) return 'nothing-due';
@@ -82,7 +87,7 @@ function dailySummaryJob(e, nowForTest) {
     if (!due.month && !due.year) return 'nothing-due';
     var cases;
     try { cases = loadCaseRecords_(); }
-    catch (x) { console.warn('สรุปอัตโนมัติ: ' + (x && x.message)); return 'no-main-source'; }
+    catch (x) { noteDataFailure_('สรุปอัตโนมัติ', x); return 'no-main-source'; }
     var url = props.getProperty('DASHBOARD_URL') || '';
     var periods = [due.month, due.year].filter(Boolean);
     var texts = periods.map(function (r) { return formatSummary_(Stats.summarize(cases, r), url); });
@@ -102,12 +107,24 @@ function dailySummaryJob(e, nowForTest) {
 
 /** e มาจาก trigger ของบัญชีนี้ที่ชี้มาที่ dailySummaryJob จริงหรือไม่ */
 function isOwnTrigger_(e) {
-  if (!e || !e.triggerUid) return false;
+  if (!e || typeof e !== 'object' || !e.triggerUid || String(e.triggerUid).length > 100) return false;
   try {
     return ScriptApp.getProjectTriggers().some(function (t) {
       return t.getUniqueId() === String(e.triggerUid) && t.getHandlerFunction() === SUMMARY.HANDLER;
     });
   } catch (x) { return false; }
+}
+
+/**
+ * trigger ทำงานในนามคนที่สร้าง (เจ้าของ) และไม่มีผู้เปิดหน้าเว็บ → active user ว่างหรือเป็นเจ้าของ
+ * ปฏิเสธ: ผู้ใช้/ผู้ดูแล Dashboard (active = ตัวเอง) และผู้ที่ล็อกอินเปิดลิงก์บอตใน Workspace โดเมนเดียว (active ≠ เจ้าของ)
+ */
+function callerMayRunJob_() {
+  var owner = ownerEmail_(), who = viewerEmail_(), eff = effectiveEmail_();
+  if (!owner) return false;
+  if (who && who !== owner) return false;
+  if (eff && eff !== owner) return false;
+  return true;
 }
 
 /** UUID คงที่ต่องวด (จาก MD5) สำหรับ X-Line-Retry-Key */

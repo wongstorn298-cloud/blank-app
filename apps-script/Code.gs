@@ -2,7 +2,7 @@
  * Dashboard งานตรวจ DNA — เวอร์ชัน Google Apps Script (ฝั่งเซิร์ฟเวอร์)
  *
  * - doGet() แสดงหน้า Dashboard (Index.html) เฉพาะผู้ที่อยู่ในรายชื่อ "ผู้ใช้" (จัดการในหน้า ผู้ใช้ ของ Dashboard)
- *   เจ้าของสคริปต์ (Script Property ADMIN_EMAIL) เป็นผู้ดูแลเสมอ · ผู้ดูแลทุกคนเปิด Dashboard ได้
+ *   เจ้าของสคริปต์ (Script Property ADMIN_EMAIL) เป็นผู้ดูแลเสมอ และเป็นคนเดียวที่ตั้ง/ถอดผู้ดูแลได้ · ผู้ดูแลทุกคนเปิด Dashboard ได้
  * - แหล่งข้อมูล (Google Sheet) ผู้ดูแลเพิ่มด้วยลิงก์ในหน้า "แหล่งข้อมูล" และเลือก "ชีตหลัก" 1 ชีต (ชีตคดี)
  *   ที่ LINE bot และสรุปรายเดือน/รายปีใช้ · การตั้งค่าทั้งหมดเก็บใน Script Properties (ดู Admin.gs)
  * - หน้าเว็บขอข้อมูลผ่าน google.script.run → getSources() / getBook(id)
@@ -15,6 +15,8 @@
  * ย้ายจากระบบเดิม (ครั้งเดียว): ถ้ายังไม่เคยบันทึกการตั้งค่าในหน้าเว็บ และมี Script Properties เดิม
  *   CASES_SHEET_ID / LAB_SHEET_ID ระบบใช้ค่าเหล่านั้น + แท็บ "ผู้ใช้" ของชีตคดีไปก่อน (โหมดเดิม)
  *   เมื่อเจ้าของเปิด Dashboard ครั้งแรก ระบบคัดลอกเข้าการตั้งค่าใหม่ให้ แล้วเลิกอ่านค่าเดิมทั้งหมด (ดู Admin.gs)
+ *   หลังบันทึกการตั้งค่าครั้งแรก ระบบตั้ง Script Property DASH_SETUP_DONE ไว้ ถ้า DASH_CFG_* หายไปภายหลัง
+ *   ระบบปฏิเสธทุกคน (fail closed) ไม่ย้อนกลับไปโหมดเดิม (ดู loadConfig_ ใน Admin.gs และ README หัวข้อ แก้ปัญหา)
  *
  * วิธีติดตั้ง: ดู apps-script/README.md
  *
@@ -38,7 +40,10 @@ var CONFIG = {
   CASES_COLUMNS: ['เลข บก.', 'เลขรายงาน', 'สภ.', 'จังหวัด', 'วันที่รับ', 'วันที่ตรวจเสร็จ', 'วันที่มารับผล', 'สถานะ',
     'ประเภทคดี', 'ผู้ตรวจ', 'ของกลาง', 'นับในสถิติ', 'ข้อสังเกต', 'เกณฑ์ของกลางผิดปกติ'],
   LAB_TABS: ['ข้อมูลเคส', 'ข้อมูลงบ', 'ข้อมูล Lot', 'หมายเหตุ'],
-  CACHE_SECONDS: 120,        // เก็บข้อมูลที่อ่านแล้วไว้ 2 นาที ให้เปิดหน้า/สลับเมนูเร็ว
+  CACHE_SECONDS: 60,         // เก็บข้อมูลที่อ่านแล้วไว้ 1 นาที (แคชของผู้ใช้แต่ละคน) ให้เปิดหน้า/สลับเมนูเร็ว
+                             //   = ถ้าเลิกแชร์ชีตใน Drive อย่างเดียว ผู้ใช้ยังเห็นข้อมูลที่แคชไว้ได้อีกไม่เกิน 60 วินาที (SR-7)
+                             //   ถอดสิทธิ์ทันที = ลบในหน้า ผู้ใช้ (ตรวจรายชื่อทุกครั้งก่อนอ่านแคช)
+  REFRESH_SECONDS: 120,      // หน้าเว็บดึงข้อมูลใหม่ทุก 2 นาที (แยกจากอายุแคช)
   ACCESS_CACHE_SECONDS: 60,  // (โหมดเดิมเท่านั้น) ผลตรวจแท็บ ผู้ใช้ เก็บไว้ 1 นาที
   CACHE_CHUNK: 30000         // ตัวอักษรต่อชิ้นใน CacheService (ค่าหนึ่งชิ้นได้ไม่เกิน 100KB)
 };
@@ -107,10 +112,11 @@ function getBook(id) {
 
 /**
  * ตรวจการตั้งค่า: เลือกฟังก์ชันนี้ใน editor แล้วกด Run ดูผลที่ Execution log
- * (บอกแค่จำนวนแถว ไม่แสดงข้อมูลคดี) — คนที่รันต้องอยู่ในรายชื่อผู้ใช้ หรือเป็นเจ้าของ
+ * (บอกแค่จำนวนแถว ไม่แสดงข้อมูลคดี) — เฉพาะเจ้าของ (ADMIN_EMAIL) หรือผู้ดูแล · ผู้ใช้ทั่วไปเรียกไม่ได้ (SR-3)
+ * เจ้าของ: มีผลตรวจ checkMainSheetAccess (บอตเปิดชีตหลักได้หรือไม่) ต่อท้าย
  */
 function checkSetup() {
-  var ctx = requireAccess_();
+  var ctx = requireAdminCtx_();
   var msg = ['อีเมลของคุณ: ' + ctx.email + (ctx.isOwner ? ' (เจ้าของสคริปต์)' : ctx.admin ? ' (ผู้ดูแล)' : ' (ผู้ใช้)'),
     ctx.cfg ? 'การตั้งค่า: จัดการในหน้าเว็บ (ผู้ใช้ ' + ctx.cfg.people.length + ' คน)' : 'การตั้งค่า: โหมดเดิม (CASES_SHEET_ID / แท็บ ผู้ใช้) · เปิด Dashboard ด้วยบัญชีเจ้าของ 1 ครั้งเพื่อย้ายระบบ'];
   var main = mainIdOf_(ctx.cfg);
@@ -123,6 +129,8 @@ function checkSetup() {
     } catch (e) { msg.push(head + (e && e.message ? e.message : 'เปิดไม่ได้')); }
   });
   if (!main) msg.push('ยังไม่ได้ตั้งชีตหลัก (LINE bot และสรุปอัตโนมัติจะยังไม่ทำงาน)');
+  if (ctx.isOwner) msg.push('', mainSheetReport_());
+  else msg.push('(ผลข้างบนตรวจด้วยบัญชีของคุณ · บอตอ่านชีตหลักในนามเจ้าของระบบ ให้เจ้าของรัน checkMainSheetAccess)');
   Logger.log(msg.join('\n'));
   return msg.join('\n');
 }
@@ -135,18 +143,74 @@ function mainSource_() {
   return id ? findSource_(cfg, id) : null;
 }
 
+/** Error ที่มีรหัสเหตุผล (ให้ log ของเจ้าของบอกสาเหตุได้ชัด) */
+function reasonError_(reason, message) { var e = new Error(message); e.reason = reason; return e; }
+
+/** ใครเปลี่ยนชีตหลักล่าสุด (ข้อความสั้นสำหรับ log ของเจ้าของ) */
+function mainChangeText_(cfg) {
+  return cfg && cfg.mainBy ? ' · ชีตหลักตั้งโดย ' + cfg.mainBy + (cfg.mainAt ? ' เมื่อ ' + cfg.mainAt : '') : '';
+}
+
 /**
  * รายการคดีทั้งหมดจาก "ชีตหลัก" ในรูปของ Stats.parseCases() — ไม่ตรวจสิทธิ์ผู้ใช้ (ผู้เรียกต้องกรองเอง เช่น groupId)
  * บอต/trigger ทำงานในนามเจ้าของ → เจ้าของต้องเปิดชีตหลักได้
  * ชื่อลงท้าย _ = หน้าเว็บเรียกผ่าน google.script.run ไม่ได้ ใช้ได้เฉพาะโค้ดฝั่งเซิร์ฟเวอร์ (LineBot.gs / Summary.gs)
+ * Error มี .reason: config | no-main | no-access | bad-tab (ใช้ใน log ของเจ้าของ ไม่ส่งเข้ากลุ่ม LINE)
  */
 function loadCaseRecords_() {
-  var src = mainSource_();
-  if (!src) throw new Error('ยังไม่ได้ตั้งชีตหลัก (หน้า แหล่งข้อมูล ของ Dashboard)');
+  var cfg, src;
+  try { cfg = loadConfig_(); } catch (e) { throw reasonError_('config', 'อ่านการตั้งค่า Dashboard ไม่ได้: ' + (e && e.message)); }
+  var id = mainIdOf_(cfg);
+  src = id ? findSource_(cfg, id) : null;
+  if (!src) throw reasonError_('no-main', 'ยังไม่ได้ตั้งชีตหลัก (หน้า แหล่งข้อมูล ของ Dashboard)');
   var ss;
   try { ss = SpreadsheetApp.openById(src.sheetId); }
-  catch (e) { throw new Error('เปิดชีตหลัก "' + src.name + '" ไม่ได้ · เจ้าของสคริปต์ต้องมีสิทธิ์อ่านชีตนี้'); }
-  return Stats.parseCases(readCasesTabs_(ss)[CONFIG.CASES_TAB]);
+  catch (e) {
+    throw reasonError_('no-access', 'บัญชีที่บอตทำงานในนาม (' + (effectiveEmail_() || 'ไม่ทราบ') + ') เปิดชีตหลัก "' + src.name + '" ไม่ได้' +
+      mainChangeText_(cfg) + ' · แก้: แชร์ชีตนี้ให้บัญชีเจ้าของระบบแบบ "ผู้มีสิทธิ์อ่าน" หรือตั้งชีตหลักใหม่ แล้วรัน checkMainSheetAccess');
+  }
+  try { return Stats.parseCases(readCasesTabs_(ss)[CONFIG.CASES_TAB]); }
+  catch (e) { throw reasonError_('bad-tab', 'อ่านแท็บ "' + CONFIG.CASES_TAB + '" ของชีตหลัก "' + src.name + '" ไม่ได้: ' + (e && e.message)); }
+}
+
+/**
+ * บันทึกสาเหตุที่บอต/สรุปอัตโนมัติอ่านข้อมูลคดีไม่ได้ ให้เจ้าของเห็นใน Executions log
+ * และเก็บครั้งล่าสุดไว้ใน ScriptCache 6 ชม. (checkMainSheetAccess แสดง) · ไม่มีข้อมูลคดี
+ */
+function noteDataFailure_(where, e) {
+  var reason = (e && e.reason) || 'error', text = (e && e.message) || String(e);
+  console.warn('[' + where + '] อ่านข้อมูลคดีไม่ได้ (' + reason + '): ' + text);
+  try { CacheService.getScriptCache().put('data-fail', JSON.stringify({ at: new Date().toISOString(), where: where, reason: reason, text: text.slice(0, 500) }), 21600); }
+  catch (x) { /* แคชใช้ไม่ได้: มีแค่ log */ }
+  return reason;
+}
+
+/**
+ * [รันใน editor · เจ้าของเท่านั้น] ตรวจว่าบัญชีเจ้าของ (ที่บอตและสรุปอัตโนมัติทำงานในนาม) เปิดชีตหลักได้
+ * ผลอยู่ใน Execution log: ชื่อชีตหลัก ใครตั้ง จำนวนแถว หรือสาเหตุที่เปิดไม่ได้ (ไม่แสดงข้อมูลคดี ไม่แสดง Sheet ID)
+ * ทำไมต้องรันเอง: ผู้ดูแลที่ตั้งชีตหลักทำงานในนามตัวเอง ระบบตรวจแทนเจ้าของไม่ได้ (ถ้าไม่เพิ่มสิทธิ์ Drive)
+ */
+function checkMainSheetAccess() {
+  requireOwner_();
+  var text = mainSheetReport_();
+  Logger.log(text);
+  return text;
+}
+
+function mainSheetReport_() {
+  var who = effectiveEmail_() || viewerEmail_(), out = [];
+  try {
+    var recs = loadCaseRecords_(), cfg = loadConfig_(), src = mainSource_();
+    out.push('ชีตหลัก: "' + src.name + '"' + mainChangeText_(cfg),
+      'ผล: บัญชี ' + who + ' เปิดได้ · แท็บ "' + CONFIG.CASES_TAB + '" ' + recs.length + ' แถว → LINE bot และสรุปอัตโนมัติอ่านได้');
+  } catch (e) {
+    out.push('ผล: LINE bot และสรุปอัตโนมัติอ่านชีตหลักไม่ได้ (' + ((e && e.reason) || 'error') + ')', (e && e.message) || String(e));
+  }
+  try {
+    var last = JSON.parse(CacheService.getScriptCache().get('data-fail') || 'null');
+    if (last) out.push('ครั้งล่าสุดที่อ่านไม่ได้ (ภายใน 6 ชม.): ' + last.at + ' · ' + last.where + ' · ' + last.reason + ' · ' + last.text);
+  } catch (x) { /* ไม่มีประวัติ */ }
+  return out.join('\n');
 }
 
 // --- สิทธิ์การเข้าถึง ---
@@ -167,14 +231,16 @@ function ownerEmail_() {
   return normEmail_(PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_OWNER));
 }
 
+/** โหมดเดิม (CASES_SHEET_ID) ใช้ได้เฉพาะก่อนบันทึกการตั้งค่าครั้งแรก · หลังมี DASH_SETUP_DONE ไม่ใช้อีกเลย (SR-2) */
 function hasLegacy_() {
-  return !!PropertiesService.getScriptProperties().getProperty(CONFIG.LEGACY_CASES);
+  var p = PropertiesService.getScriptProperties();
+  return !!p.getProperty(CONFIG.LEGACY_CASES) && !p.getProperty(CFG.DONE);
 }
 
 /**
  * ตรวจสิทธิ์ของอีเมล
  * @return {{ok:boolean, email:string, reason:string, admin:boolean, isOwner:boolean, cfg:object|null}}
- *   reason: no-email | wrong-deployment | no-config | config-broken | not-listed
+ *   reason: no-email | wrong-deployment | no-config | config-broken | config-missing | not-listed
  *           (โหมดเดิมเท่านั้น) no-sheet-access | no-users-tab
  */
 function checkAccess_(email) {
@@ -184,7 +250,7 @@ function checkAccess_(email) {
   var eff = effectiveEmail_();
   if (eff && eff !== email) return deny('wrong-deployment');
   var owner = ownerEmail_(), isOwner = !!owner && email === owner, cfg;
-  try { cfg = loadConfig_(); } catch (e) { return deny('config-broken'); }
+  try { cfg = loadConfig_(); } catch (e) { return deny(e && e.reason === 'config-missing' ? 'config-missing' : 'config-broken'); }
   if (cfg) {
     var p = findPerson_(cfg, email);
     if (!isOwner && !p) return deny('not-listed');
@@ -245,6 +311,8 @@ function messagePage_(access) {
     'wrong-deployment': 'ลิงก์นี้ไม่ใช่ลิงก์ Dashboard (เป็นลิงก์สำหรับระบบอื่น) · โปรดใช้ลิงก์ Dashboard ที่ผู้ดูแลส่งให้',
     'no-config': 'ผู้ดูแลยังไม่ได้ตั้งค่า ADMIN_EMAIL (อีเมลเจ้าของสคริปต์) ใน Script Properties',
     'config-broken': 'การตั้งค่าของระบบอ่านไม่ได้ชั่วคราว · ลองเปิดใหม่อีกครั้ง ถ้ายังเป็นอยู่ให้แจ้งผู้ดูแล',
+    'config-missing': 'การตั้งค่าของระบบ (รายชื่อผู้ใช้และแหล่งข้อมูล) หายไป ระบบจึงปิดการเข้าถึงทุกบัญชีไว้ก่อนเพื่อความปลอดภัย · ' +
+      'เจ้าของระบบ: ดูวิธีกู้คืนใน README หัวข้อ "แก้ปัญหา" แถว "การตั้งค่าของระบบหายไป"',
     'no-sheet-access': 'บัญชีนี้ยังไม่ได้รับสิทธิ์ "ผู้มีสิทธิ์อ่าน" ใน Google Sheet ข้อมูลคดี',
     'no-users-tab': 'ไม่พบแท็บ "' + CONFIG.USERS_TAB + '" หรือคอลัมน์ "' + CONFIG.USERS_EMAIL_HEAD + '" ในชีตข้อมูลคดี (ระบบเดิม)',
     'not-listed': 'อีเมลนี้ยังไม่อยู่ในรายชื่อผู้ใช้ที่ได้รับอนุญาต'
@@ -302,7 +370,7 @@ function kindLabelOf_(src) {
 
 function sheetUrl_(id) { return 'https://docs.google.com/spreadsheets/d/' + id + '/edit'; }
 
-/** ข้อมูลสำหรับหน้าเว็บ — ผู้ใช้ทั่วไปไม่ได้รับ Sheet ID / ลิงก์ / อีเมลผู้เพิ่ม */
+/** ข้อมูลสำหรับหน้าเว็บ — ผู้ใช้ทั่วไปไม่ได้รับ Sheet ID / ลิงก์ / อีเมลผู้เพิ่ม / ผู้เปลี่ยนชีตหลัก */
 function sourcesPayload_(ctx, notice) {
   var main = mainIdOf_(ctx.cfg);
   var sources = sourcesOf_(ctx.cfg).map(function (s) {
@@ -311,8 +379,9 @@ function sourcesPayload_(ctx, notice) {
     if (ctx.admin) { o.url = sheetUrl_(s.sheetId); o.by = s.by || ''; o.at = s.at || ''; }
     return o;
   });
+  var mainChange = ctx.admin && main && ctx.cfg && ctx.cfg.mainBy ? { by: ctx.cfg.mainBy, at: ctx.cfg.mainAt || '' } : null;
   return { email: ctx.email, isAdmin: !!ctx.admin, isOwner: !!ctx.isOwner, owner: ctx.admin ? ownerEmail_() : '',
-    mainId: main, sources: sources, legacy: !ctx.cfg && hasLegacy_(), notice: notice || '', refreshSeconds: CONFIG.CACHE_SECONDS };
+    mainId: main, mainChange: mainChange, sources: sources, legacy: !ctx.cfg && hasLegacy_(), notice: notice || '', refreshSeconds: CONFIG.REFRESH_SECONDS };
 }
 
 /** เปิดชีตด้วยสิทธิ์ผู้ใช้ · เปิดไม่ได้ = ข้อความภาษาไทยที่ไม่มี Sheet ID */
@@ -399,10 +468,26 @@ function cachePut_(key, str) {
   var c = userCache_(); if (!c) return;
   try {
     var obj = {}, n = 0;
-    for (var i = 0; i < str.length; i += CONFIG.CACHE_CHUNK) obj[key + ':' + (n++)] = str.slice(i, i + CONFIG.CACHE_CHUNK);
+    chunks_(str, CONFIG.CACHE_CHUNK).forEach(function (c) { obj[key + ':' + (n++)] = c; });
     obj[key + ':n'] = String(n);
     c.putAll(obj, CONFIG.CACHE_SECONDS);
   } catch (e) { /* แคชเต็มหรือใหญ่เกิน: ข้ามไป อ่านจากชีตทุกครั้งแทน */ }
+}
+
+/**
+ * แบ่งข้อความเป็นชิ้นละไม่เกิน size หน่วย UTF-16 โดยไม่ผ่ากลางอีโมจิ/อักขระนอก BMP (surrogate pair) — SR-1
+ * ชิ้นที่ผ่ากลางคู่จะเป็น UTF-16 ที่ไม่ถูกต้อง ที่เก็บที่แปลงเป็น UTF-8 อาจแทนด้วย U+FFFD แล้วลายเซ็นไม่ตรง
+ * ได้อย่างน้อย 1 ชิ้นเสมอ (ข้อความว่าง = [''])
+ */
+function chunks_(s, size) {
+  var out = [], i = 0;
+  while (i < s.length || !out.length) {
+    var end = Math.min(i + size, s.length);
+    if (end < s.length && end > i + 1) { var c = s.charCodeAt(end - 1); if (c >= 0xD800 && c <= 0xDBFF) end--; }
+    out.push(s.slice(i, end)); i = end;
+    if (!s.length) break;
+  }
+  return out;
 }
 
 /** ลายเซ็นข้อมูล (หน้าเว็บใช้ดูว่าข้อมูลเปลี่ยนหรือยัง) */

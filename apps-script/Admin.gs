@@ -9,6 +9,9 @@
  *     → แบ่งชิ้นละ ≤ 2,900 ตัวอักษร (≤ 8.7 KB แม้เป็นภาษาไทยทั้งหมด) และจำกัดการตั้งค่ารวม ≤ 120 KB
  *   - เขียนทุกชิ้นในคำสั่งเดียว (setProperties) ภายใต้ LockService.getScriptLock() กันผู้ดูแล 2 คนบันทึกทับกัน
  *   - ชิ้นสุดท้าย DASH_CFG_N = "จำนวนชิ้น:ลายเซ็น" ถ้าอ่านแล้วลายเซ็นไม่ตรง (อ่านระหว่างเขียน) จะอ่านใหม่ 1 ครั้ง
+ *   - แบ่งชิ้นไม่ผ่ากลางอีโมจิ (chunks_ ใน Code.gs) และตัดความยาวชื่อ/หมายเหตุตามจุดรหัส (SR-1)
+ *   - DASH_SETUP_DONE (ชื่อไม่ขึ้นต้นด้วย DASH_CFG_) = เคยบันทึกการตั้งค่าแล้ว · ถ้า DASH_CFG_* หายทีหลัง
+ *     loadConfig_ โยน Error (reason config-missing) → ปฏิเสธทุกคน ไม่ย้อนไปโหมดเดิม/แท็บ ผู้ใช้ (SR-2)
  *   ห้ามแก้ DASH_CFG_* เองในหน้า Project Settings
  *
  * ความปลอดภัย:
@@ -17,6 +20,8 @@
  *   - ตรวจลิงก์ชีตด้วยสิทธิ์ของผู้ดูแลที่กด (Execute as user) → เพิ่มได้เฉพาะชีตที่ผู้ดูแลคนนั้นเปิดได้เอง
  *   - ผลตรวจลิงก์มีเฉพาะชื่อแท็บ จำนวนแถว และชื่อหัวคอลัมน์ที่ขาด (จากแม่แบบ) ไม่มีค่าในเซลล์
  *   - เจ้าของ (ADMIN_EMAIL) เป็นผู้ดูแลเสมอ ลบ/ลดสิทธิ์จากหน้าเว็บไม่ได้ · ห้ามลบผู้ดูแลคนสุดท้าย
+ *   - เฉพาะเจ้าของตั้ง/ถอด/ลบ/แก้ไขผู้ดูแลได้ (Q44) · ผู้ดูแลอื่นจัดการได้แค่แหล่งข้อมูล ชีตหลัก และผู้ใช้ทั่วไป
+ *   - ผู้ดูแลเปลี่ยนชีตหลักได้ → บันทึก mainBy/mainAt ให้เจ้าของเห็นในหน้า แหล่งข้อมูล และใน log ของบอต (SR-5)
  *
  * ย้ายจากระบบเดิม (ครั้งเดียว): การตั้งค่ายังว่าง + มี CASES_SHEET_ID → เมื่อเจ้าของเปิด Dashboard (getSources)
  *   หรือผู้ดูแลบันทึกครั้งแรก ระบบสร้างการตั้งค่าจาก CASES_SHEET_ID / LAB_SHEET_ID และแท็บ "ผู้ใช้" ของชีตคดี
@@ -26,6 +31,7 @@
 var CFG = {
   PREFIX: 'DASH_CFG_',
   META: 'DASH_CFG_N',
+  DONE: 'DASH_SETUP_DONE',   // ห้ามขึ้นต้นด้วย PREFIX: การลบ DASH_CFG_* ทั้งชุดต้องไม่ลบค่านี้ไปด้วย
   CHUNK_CHARS: 2900,
   MAX_BYTES: 120 * 1024,
   MAX_SOURCES: 30,
@@ -37,24 +43,36 @@ var CFG = {
 
 // ---------------------------------------------------------------- ที่เก็บการตั้งค่า
 
-function emptyConfig_() { return { v: 1, sources: [], mainId: null, people: [], migrated: null }; }
+function emptyConfig_() { return { v: 1, sources: [], mainId: null, mainBy: '', mainAt: '', people: [], migrated: null }; }
 
-/** อ่านการตั้งค่า · null = ยังไม่เคยบันทึก · โยน Error ถ้าข้อมูลเสียหาย (ผู้เรียกต้องปฏิเสธ ไม่ใช่เปิดให้ทุกคน) */
+/**
+ * อ่านการตั้งค่า · null = ยังไม่เคยบันทึก (และไม่มี DASH_SETUP_DONE)
+ * โยน Error ถ้าข้อมูลเสียหาย (reason config-broken) หรือหายไปหลังเคยบันทึกแล้ว (reason config-missing)
+ * ผู้เรียกต้องปฏิเสธ ไม่ใช่เปิดให้ทุกคน
+ */
 function loadConfig_() {
   for (var attempt = 0; attempt < 2; attempt++) {
-    var all = PropertiesService.getScriptProperties().getProperties() || {};
+    var props = PropertiesService.getScriptProperties();
+    var all = props.getProperties() || {};
     var meta = all[CFG.META];
-    if (!meta) return null;
+    if (!meta) {
+      if (all[CFG.DONE]) throw reasonError_('config-missing', 'การตั้งค่า Dashboard (DASH_CFG_*) หายไปหลังจากเคยบันทึกแล้ว · ระบบปฏิเสธทุกคนจนกว่าเจ้าของจะกู้คืน (README: แก้ปัญหา)');
+      return null;
+    }
     var m = /^(\d+):(\w+)$/.exec(String(meta)), parts = [], okParts = !!m;
     for (var i = 0; okParts && i < +m[1]; i++) {
       var c = all[CFG.PREFIX + i];
       if (c == null) okParts = false; else parts.push(c);
     }
     var json = parts.join('');
-    if (okParts && hash_(json) === m[2]) return normalizeConfig_(JSON.parse(json));
+    if (okParts && hash_(json) === m[2]) {
+      var cfg = normalizeConfig_(JSON.parse(json));
+      if (!all[CFG.DONE]) { try { props.setProperty(CFG.DONE, cfg.migrated && cfg.migrated.at || new Date().toISOString()); } catch (e) { /* ครั้งหน้าลองใหม่ */ } }
+      return cfg;
+    }
     if (attempt === 0) { try { Utilities.sleep(300); } catch (e) { /* ไม่มี sleep ในชุดทดสอบ */ } }
   }
-  throw new Error('การตั้งค่า Dashboard เสียหาย (DASH_CFG_*)');
+  throw reasonError_('config-broken', 'การตั้งค่า Dashboard เสียหาย (DASH_CFG_*)');
 }
 
 /** บันทึกการตั้งค่า (เรียกภายใต้ lock เท่านั้น) */
@@ -63,8 +81,9 @@ function saveConfig_(cfg) {
   if (bytes > CFG.MAX_BYTES)
     throw new Error('การตั้งค่ายาวเกินที่เก็บได้ (' + Math.ceil(bytes / 1024) + ' KB จากสูงสุด ' + (CFG.MAX_BYTES / 1024) + ' KB) · ลดจำนวนผู้ใช้หรือตัดหมายเหตุให้สั้นลง');
   var props = PropertiesService.getScriptProperties(), obj = {}, n = 0;
-  for (var i = 0; i < json.length || n === 0; i += CFG.CHUNK_CHARS) obj[CFG.PREFIX + (n++)] = json.slice(i, i + CFG.CHUNK_CHARS);
+  chunks_(json, CFG.CHUNK_CHARS).forEach(function (c) { obj[CFG.PREFIX + (n++)] = c; });   // ไม่ผ่ากลางอีโมจิ (SR-1)
   obj[CFG.META] = n + ':' + hash_(json);
+  if (!props.getProperty(CFG.DONE)) obj[CFG.DONE] = new Date().toISOString();                // SR-2
   props.setProperties(obj);
   var all = props.getProperties() || {};
   for (var k = n; all[CFG.PREFIX + k] != null; k++) props.deleteProperty(CFG.PREFIX + k);   // ชิ้นเก่าที่เกิน
@@ -89,16 +108,18 @@ function normalizeConfig_(c) {
     if (!s || typeof s.id !== 'string' || ids[s.id] || !/^[A-Za-z0-9_-]{1,40}$/.test(s.id) || !isSheetId_(s.sheetId)) return;
     if (s.kind !== 'cases' && s.kind !== 'lab') return;
     ids[s.id] = 1;
-    out.sources.push({ id: s.id, name: String(s.name || '').slice(0, CFG.NAME_MAX) || KIND_LABEL[s.kind], sheetId: s.sheetId, kind: s.kind,
+    out.sources.push({ id: s.id, name: cpSlice_(String(s.name || ''), CFG.NAME_MAX) || KIND_LABEL[s.kind], sheetId: s.sheetId, kind: s.kind,
       tabs: Array.isArray(s.tabs) ? s.tabs.map(String).slice(0, 10) : [], v: +s.v || 0, by: String(s.by || ''), at: String(s.at || '') });
   });
   out.mainId = typeof c.mainId === 'string' && ids[c.mainId] ? c.mainId : null;
+  out.mainBy = out.mainId ? String(c.mainBy || '').slice(0, 254) : '';
+  out.mainAt = out.mainId ? String(c.mainAt || '').slice(0, 40) : '';
   var seen = {};
   (Array.isArray(c.people) ? c.people : []).forEach(function (p) {
     var e = p && normEmail_(p.email);
     if (!e || seen[e] || !isEmail_(e)) return;
     seen[e] = 1;
-    out.people.push({ email: e, name: String(p.name || '').slice(0, CFG.NAME_MAX), note: String(p.note || '').slice(0, CFG.NOTE_MAX),
+    out.people.push({ email: e, name: cpSlice_(String(p.name || ''), CFG.NAME_MAX), note: cpSlice_(String(p.note || ''), CFG.NOTE_MAX),
       admin: p.admin === true, by: String(p.by || ''), at: String(p.at || '') });
   });
   out.migrated = c.migrated || null;
@@ -115,7 +136,7 @@ function initialConfig_(byEmail) {
     s.by = byEmail; s.at = now; s.v = 1;
     cfg.sources.push(s);
   });
-  if (findSource_(cfg, 'cases')) cfg.mainId = 'cases';
+  if (findSource_(cfg, 'cases')) { cfg.mainId = 'cases'; cfg.mainBy = byEmail; cfg.mainAt = now; }
   try {   // แท็บ ผู้ใช้ เดิม (อ่านด้วยสิทธิ์ของคนที่ทำการย้าย = เจ้าของ)
     var src = findSource_(cfg, 'cases');
     var sh = src && SpreadsheetApp.openById(src.sheetId).getSheetByName(CONFIG.USERS_TAB);
@@ -162,9 +183,26 @@ function isEmail_(s) {
   return typeof s === 'string' && s.length <= 254 && /^[a-z0-9.!#$%&*+\/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(s);
 }
 
-/** ข้อความสั้น: ตัดอักขระควบคุม/ช่องว่างซ้ำ แล้วจำกัดความยาว */
+/**
+ * ข้อความสั้น: ตัดอักขระควบคุม อักขระที่มองไม่เห็น/ควบคุมทิศทาง (SR-6) ครึ่งอีโมจิที่ไม่มีคู่ และช่องว่างซ้ำ
+ * แล้วจำกัดความยาวตามจุดรหัส (อีโมจิ 1 ตัว = 1) ไม่ผ่ากลางอีโมจิ (SR-1)
+ *   ควบคุม → ช่องว่าง: C0, DEL, C1, U+2028/2029
+ *   ลบทิ้ง: U+00AD, U+061C (ALM), U+180E, U+200B–200F (ZW*, LRM/RLM), U+202A–202E (embed/override),
+ *           U+2060–206F (word joiner, LRI/RLI/FSI/PDI, …), U+FEFF (BOM), U+FFF9–FFFB
+ */
 function cleanText_(s, max) {
-  return String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  var t = String(s == null ? '' : s)
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
+    .replace(/[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g, '')
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+    .replace(/\s+/g, ' ').trim();
+  return cpSlice_(t, max).trim();
+}
+
+/** ตัดข้อความให้เหลือ max จุดรหัส (ไม่เหลือครึ่งอีโมจิ) */
+function cpSlice_(s, max) {
+  var a = Array.from(s);
+  return a.length <= max ? s : a.slice(0, max).join('');
 }
 
 /** ลิงก์ Google Sheet หรือ Sheet ID → Sheet ID (โยน Error ภาษาไทยถ้าไม่ใช่) */
@@ -280,7 +318,7 @@ function adminSaveSource(input) {
     insp = inspectSheet_(sheetId);   // ตรวจซ้ำฝั่งเซิร์ฟเวอร์เสมอ ไม่เชื่อผลตรวจที่หน้าเว็บส่งมา
     if (!insp.ok) throw new Error(insp.problems.join(' · ') || 'ชีตนี้ใช้ไม่ได้');
   }
-  var now = new Date().toISOString(), msg = '';
+  var now = new Date().toISOString(), msg = '', kind = null, isMain = false;
   withConfig_(ctx.email, function (cfg) {
     var src = id ? findSource_(cfg, id) : null;
     if (id && !src) throw new Error('ไม่พบแหล่งข้อมูลนี้ (อาจถูกลบไปแล้ว) · โหลดหน้าใหม่');
@@ -302,8 +340,22 @@ function adminSaveSource(input) {
     src.name = name || src.name || (insp ? insp.kindLabel : KIND_LABEL[src.kind]);
     src.v = (src.v || 0) + 1; src.by = ctx.email; src.at = now;
     if (!mainIdOf_(cfg) && src.kind === 'cases') { cfg.mainId = src.id; msg += ' และตั้งเป็นชีตหลัก (LINE bot ใช้ชีตนี้)'; }
+    if (cfg.mainId === src.id && (sheetId || !cfg.mainBy)) { cfg.mainBy = ctx.email; cfg.mainAt = now; }   // ชีตหลักเปลี่ยนไฟล์ = เปลี่ยนชีตหลัก
+    kind = src.kind; isMain = cfg.mainId === src.id;
   });
-  return { message: msg, state: sourcesPayload_(requireAccess_(), '') };
+  return { message: msg, warning: ownerShareWarning_(ctx, sheetId ? kind : null, isMain), state: sourcesPayload_(requireAccess_(), '') };
+}
+
+/**
+ * Q45: บอต/สรุปอัตโนมัติอ่านชีตหลักในนามเจ้าของ แต่ผู้ดูแลที่เพิ่ม/ตั้งชีตทำงานในนามตัวเอง ระบบตรวจสิทธิ์ของเจ้าของแทนไม่ได้
+ * (ต้องใช้สิทธิ์ Drive ซึ่งไม่ขอเพิ่ม) → เตือนผู้ดูแลที่ไม่ใช่เจ้าของทุกครั้ง · เจ้าของตรวจเองด้วย checkMainSheetAccess
+ * @param {?string} kind ชนิดของชีตที่เพิ่ม/เปลี่ยนลิงก์ (null = ไม่ได้เปลี่ยนไฟล์)
+ */
+function ownerShareWarning_(ctx, kind, isMain) {
+  if (ctx.isOwner || (!kind && !isMain)) return '';
+  var who = 'บัญชีเจ้าของระบบ' + (ownerEmail_() ? ' (' + ownerEmail_() + ')' : '');
+  return isMain ? 'ต้องแชร์ชีตนี้ให้' + who + ' ไม่เช่นนั้นบอตจะอ่านไม่ได้'
+    : 'ต้องแชร์ชีตนี้ให้' + who + ' ด้วย (กติกาของระบบ: ทุกชีตต้องแชร์ให้เจ้าของ ถ้าภายหลังตั้งเป็นชีตหลัก บอตจะได้อ่านได้)';
 }
 
 /** ลบแหล่งข้อมูล (ลบชีตหลักไม่ได้ ต้องตั้งชีตหลักอื่นก่อน) */
@@ -326,9 +378,11 @@ function adminSetMain(id) {
     var src = findSource_(cfg, String(id));
     if (!src) throw new Error('ไม่พบแหล่งข้อมูลนี้ (อาจถูกลบไปแล้ว)');
     if (src.kind !== 'cases') throw new Error('ชีตหลักต้องเป็นชีตคดี (มีแท็บ ข้อมูลคดี)');
-    cfg.mainId = src.id; name = src.name;
+    if (cfg.mainId !== src.id) { cfg.mainId = src.id; cfg.mainBy = ctx.email; cfg.mainAt = new Date().toISOString(); }
+    name = src.name;
   });
-  return { message: 'ตั้ง "' + name + '" เป็นชีตหลักแล้ว · LINE bot และสรุปอัตโนมัติจะอ่านจากชีตนี้', state: sourcesPayload_(requireAccess_(), '') };
+  return { message: 'ตั้ง "' + name + '" เป็นชีตหลักแล้ว · LINE bot และสรุปอัตโนมัติจะอ่านจากชีตนี้', warning: ownerShareWarning_(ctx, 'cases', true),
+    state: sourcesPayload_(requireAccess_(), '') };
 }
 
 /** รายชื่อผู้ใช้/ผู้ดูแล + ลิงก์ชีตทุกแหล่ง (สำหรับเตือนให้แชร์) */
@@ -338,6 +392,7 @@ function adminGetPeople() {
 
 /**
  * เพิ่ม / แก้ไขผู้ใช้
+ * ผู้ดูแลที่ไม่ใช่เจ้าของ: เพิ่ม/แก้ได้เฉพาะผู้ใช้ทั่วไป · ส่ง admin:true หรือแตะรายการของผู้ดูแล = ปฏิเสธ (Q44)
  * @param {{email:string, name?:string, note?:string, admin?:boolean, edit?:boolean}} input
  */
 function adminSaveUser(input) {
@@ -351,6 +406,8 @@ function adminSaveUser(input) {
     var p = findPerson_(cfg, email);
     if (p && !input.edit) throw new Error('อีเมลนี้อยู่ในรายชื่อแล้ว (' + (p.name || p.email) + ')');
     if (!p && input.edit) throw new Error('ไม่พบอีเมลนี้ในรายชื่อ (อาจถูกลบไปแล้ว)');
+    if (p && p.admin) requireOwnerFor_(ctx, 'แก้ไขข้อมูลของผู้ดูแลได้');
+    if (input.admin === true && !(p && p.admin)) requireOwnerFor_(ctx, 'ตั้งผู้ดูแลได้');
     if (!p) {
       if (cfg.people.length >= CFG.MAX_PEOPLE) throw new Error('เพิ่มได้สูงสุด ' + CFG.MAX_PEOPLE + ' คน');
       p = { email: email, admin: false };
@@ -367,10 +424,11 @@ function adminSaveUser(input) {
   return { message: msg, self: self, people: self ? null : peoplePayload_(requireAdminCtx_()) };
 }
 
-/** ตั้ง / เลิกเป็นผู้ดูแล (ผู้ที่เลิกเป็นผู้ดูแลยังอยู่ในรายชื่อผู้ใช้) */
+/** ตั้ง / เลิกเป็นผู้ดูแล (ผู้ที่เลิกเป็นผู้ดูแลยังอยู่ในรายชื่อผู้ใช้) · เจ้าของระบบเท่านั้น (Q44) */
 function adminSetAdmin(email, admin) {
   var ctx = requireAdminCtx_(), e = normEmail_(email), on = admin === true;
   if (e && e === ownerEmail_()) throw new Error('เจ้าของสคริปต์เป็นผู้ดูแลเสมอ เปลี่ยนในหน้านี้ไม่ได้');
+  requireOwnerFor_(ctx, on ? 'ตั้งผู้ดูแลได้' : 'ถอดผู้ดูแลได้');
   withConfig_(ctx.email, function (cfg) {
     var p = findPerson_(cfg, e);
     if (!p) throw new Error('ไม่พบอีเมลนี้ในรายชื่อ');
@@ -382,14 +440,14 @@ function adminSetAdmin(email, admin) {
     people: self ? null : peoplePayload_(requireAdminCtx_()) };
 }
 
-/** ลบผู้ใช้ออกจากรายชื่อ (เปิด Dashboard ไม่ได้อีก) */
+/** ลบผู้ใช้ออกจากรายชื่อ (เปิด Dashboard ไม่ได้อีก) · ลบผู้ดูแลได้เฉพาะเจ้าของระบบ (Q44) */
 function adminRemoveUser(email) {
   var ctx = requireAdminCtx_(), e = normEmail_(email);
   if (e && e === ownerEmail_()) throw new Error('ลบเจ้าของสคริปต์ไม่ได้');
   withConfig_(ctx.email, function (cfg) {
     var p = findPerson_(cfg, e);
     if (!p) throw new Error('ไม่พบอีเมลนี้ในรายชื่อ (อาจถูกลบไปแล้ว)');
-    if (p.admin) guardLastAdmin_(cfg, p);
+    if (p.admin) { requireOwnerFor_(ctx, 'ลบผู้ดูแลได้'); guardLastAdmin_(cfg, p); }
     cfg.people = cfg.people.filter(function (x) { return x !== p; });
   });
   var self = e === ctx.email;
@@ -404,7 +462,17 @@ function findPerson_(cfg, email) {
   return null;
 }
 
-/** ต้องเหลือผู้ดูแลอย่างน้อย 1 คน (นับเจ้าของ ADMIN_EMAIL ด้วย) */
+/**
+ * Q44: การจัดการผู้ดูแล (ตั้ง/ถอด/ลบ/แก้ไขผู้ดูแล) เฉพาะเจ้าของระบบ (ADMIN_EMAIL)
+ * ตรวจฝั่งเซิร์ฟเวอร์ภายใน withConfig_ (หลังอ่านการตั้งค่าล่าสุด) · การซ่อนปุ่มในหน้าเว็บเป็นแค่ความสะดวก
+ */
+function requireOwnerFor_(ctx, what) {
+  if (ctx.isOwner) return;
+  if (!ownerEmail_()) throw new Error('ยังไม่ได้ตั้ง ADMIN_EMAIL ใน Script Properties · เฉพาะเจ้าของระบบ' + what);
+  throw new Error('เฉพาะเจ้าของระบบ (' + ownerEmail_() + ') ' + what + ' · ผู้ดูแลคนอื่นจัดการได้เฉพาะแหล่งข้อมูลและผู้ใช้ทั่วไป');
+}
+
+/** ต้องเหลือผู้ดูแลอย่างน้อย 1 คน (นับเจ้าของ ADMIN_EMAIL ด้วย) · หลัง Q44 เป็นการกันซ้ำ เพราะเจ้าของนับเสมอ */
 function guardLastAdmin_(cfg, leaving) {
   var others = cfg.people.filter(function (p) { return p.admin && p !== leaving; }).length + (ownerEmail_() ? 1 : 0);
   if (!others) throw new Error('ต้องมีผู้ดูแลอย่างน้อย 1 คน · ตั้งคนอื่นเป็นผู้ดูแลก่อน (หรือตั้ง ADMIN_EMAIL ใน Script Properties)');
@@ -421,7 +489,7 @@ function peoplePayload_(ctx) {
   var cfg = ctx.cfg || loadConfig_();
   var people = cfg ? cfg.people : [];
   return {
-    me: ctx.email, owner: ownerEmail_(), legacy: !cfg && hasLegacy_(),
+    me: ctx.email, owner: ownerEmail_(), isOwner: !!ctx.isOwner, legacy: !cfg && hasLegacy_(),
     people: people.map(function (p) { return { email: p.email, name: p.name, note: p.note, admin: p.admin, by: p.by, at: p.at }; })
       .sort(function (a, b) { return (b.admin - a.admin) || (a.name || a.email).localeCompare(b.name || b.email, 'th'); }),
     sources: sourcesOf_(cfg).map(function (s) { return { name: s.name, url: sheetUrl_(s.sheetId) }; }),

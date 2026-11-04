@@ -280,7 +280,42 @@ async function run({ results, OUT, EXP, statsOf, botSamples, live }) {
           const sw = await mm.evaluate(() => document.documentElement.scrollWidth); if (sw > 392) throw new Error(h + ' scrollWidth ' + sw); }
         await mm.click('[data-act="padd"]'); await mm.waitForSelector('#pCard'); await sshot(mm, 'src-mobile-users');
       });
+      await check('Q44: ผู้ดูแลที่ไม่ใช่เจ้าของ หน้าผู้ใช้', 'ไม่มีปุ่มตั้ง/เลิกผู้ดูแล · แถวผู้ดูแลไม่มีปุ่มแก้ไข/ลบ (ขึ้น "จัดการได้เฉพาะเจ้าของระบบ") · ฟอร์มไม่มีช่องติ๊กผู้ดูแล · เรียกเซิร์ฟเวอร์ตรง ๆ ก็ถูกปฏิเสธ', async () => {
+        if (await mm.$('#pAdm')) throw new Error('มีช่องติ๊กผู้ดูแล');
+        if (await mm.$('[data-act="mkadmin"],[data-act="unadmin"]')) throw new Error('มีปุ่มตั้ง/เลิกผู้ดูแล');
+        const adminRow = await mm.$eval('#pList li:has(.badge.ok):not(:first-child)', li => [li.querySelectorAll('[data-act]').length, li.textContent]);
+        if (adminRow[0] || !adminRow[1].includes('จัดการได้เฉพาะเจ้าของระบบ')) throw new Error('แถวผู้ดูแล: ' + adminRow);
+        const r = await mm.evaluate(e => new Promise(res => google.script.run.withSuccessHandler(() => res('ok')).withFailureHandler(x => res(x.message)).adminSetAdmin(e, true)), live.ALLOWED);
+        if (!r.includes('เฉพาะเจ้าของระบบ')) throw new Error(r); return r;
+      });
+      await check('Q45: ผู้ดูแลที่ไม่ใช่เจ้าของ ตั้งชีตหลัก / เพิ่มชีต', 'กด "ตั้งเป็นชีตหลัก" แล้วขึ้นคำเตือน "ต้องแชร์ชีตนี้ให้บัญชีเจ้าของระบบ … บอตจะอ่านไม่ได้" ก่อนยืนยัน · ฟอร์มเพิ่มชีตมีคำเตือนเดียวกัน · ไม่เลื่อนแนวนอน', async () => {
+        await go(mm, '#sources'); await mm.click('.srcs li:has-text("คดีชุด 2") [data-act="main-ask"]'); await mm.waitForSelector('[data-act="main-cancel"]'); await settle(mm);
+        const w = await mm.$eval('[data-act="main-cancel"]', b => b.closest('.msg').textContent);
+        if (!w.includes('ต้องแชร์ชีตนี้ให้บัญชีเจ้าของระบบ') || !w.includes(live.OWNER) || !w.includes('บอตจะอ่านไม่ได้')) throw new Error(w);
+        const sw = await mm.evaluate(() => document.documentElement.scrollWidth); if (sw > 392) throw new Error('scrollWidth ' + sw);
+        await (await mm.$('[data-act="main-cancel"]')).scrollIntoViewIfNeeded(); await sshot(mm, 'src-mobile-main-warning');
+        await mm.click('.srcs li:has-text("คดีชุด 2") [data-act="main"]');
+        await mm.waitForFunction(() => document.querySelector('.srcs li:has(.badge.main)') && document.querySelector('.srcs li:has(.badge.main)').textContent.includes('คดีชุด 2'));
+        const t = await mm.textContent('#toast'); if (!t.includes('ต้องแชร์')) throw new Error('toast: ' + t);
+        await mm.click('[data-act="add"]'); await mm.waitForSelector('#formCard'); const f = await mm.textContent('#formCard');
+        if (!f.includes('ต้องแชร์ชีตนี้ให้บัญชีเจ้าของระบบ')) throw new Error('ฟอร์มไม่มีคำเตือน');
+        return w.replace(/\s+/g, ' ').trim().slice(0, 140);
+      });
       await mm.context().close();
+
+      const o2 = await newPage({ live: { g, email: live.OWNER } });
+      await o2.goto(BASE + '#sources'); await o2.waitForSelector('.srcs li .badge.main'); await settle(o2);
+      await check('SR-5: เจ้าของเห็นว่าใครเปลี่ยนชีตหลัก', 'แถบ "ชีตหลักถูกเปลี่ยนโดย admin2 เมื่อ …" + บรรทัดในแถวชีตหลัก · กดรับทราบแล้วแถบหาย (บรรทัดในแถวยังอยู่) · หน้าผู้ใช้ของเจ้าของมีปุ่มตั้ง/เลิกผู้ดูแล', async () => {
+        const b = await o2.textContent('#view'); if (!b.includes('ชีตหลักถูกเปลี่ยนโดย ' + live.ADMIN2 + ' เมื่อ')) throw new Error('ไม่มีแถบแจ้ง');
+        await sshot(o2, 'src-owner-main-changed');
+        await o2.click('[data-act="main-ack"]'); await settle(o2);
+        const b2 = await o2.textContent('#view'); if (b2.includes('ชีตหลักถูกเปลี่ยนโดย')) throw new Error('กดรับทราบแล้วยังอยู่');
+        if (!b2.includes('ตั้งเป็นชีตหลักโดย ' + live.ADMIN2)) throw new Error('ไม่มีบรรทัดในแถวชีตหลัก');
+        await go(o2, '#users'); await o2.waitForSelector('#pList'); if (!(await o2.$('[data-act="unadmin"]')) || !(await o2.$('[data-act="mkadmin"]'))) throw new Error('เจ้าของไม่มีปุ่มจัดการผู้ดูแล');
+        await o2.click('[data-act="padd"]'); await o2.waitForSelector('#pAdm');
+        return b.match(/ชีตหลักถูกเปลี่ยนโดย[^·]+/)[0].trim();
+      });
+      await o2.context().close();
     }
   } finally {
     await browser.close();

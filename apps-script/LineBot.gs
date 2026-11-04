@@ -19,6 +19,8 @@
  * ข้อมูลคดีอ่านจาก "ชีตหลัก" ที่ผู้ดูแลตั้งในหน้า แหล่งข้อมูล ของ Dashboard (loadCaseRecords_ ใน Code.gs)
  * บอตทำงานในนามเจ้าของ (Execute as: Me) → บัญชีเจ้าของต้องเปิดชีตหลักได้
  * ถ้ายังไม่ตั้งชีตหลักหรือเปิดไม่ได้ บอตตอบว่า "อ่านข้อมูลคดีไม่ได้ในขณะนี้" (เฉพาะเมื่อถูกเรียก) แทนการเงียบ
+ *   สาเหตุจริง (ยังไม่ตั้ง / การตั้งค่าเสียหาย / เจ้าของเปิดชีตไม่ได้ + ใครตั้งชีตหลัก) อยู่ใน Executions log ของเจ้าของ
+ *   และรัน checkMainSheetAccess ใน editor ดูได้ (noteDataFailure_ ใน Code.gs) — ไม่ส่งรายละเอียดเข้ากลุ่ม
  *
  * Script Properties: LINE_CHANNEL_TOKEN, WEBHOOK_TOKEN, ALLOWED_GROUP_ID, ADMIN_EMAIL (เจ้าของ),
  *                    SETUP_UNTIL (ตั้งโดย startSetupMode), SETUP_SEEN_GROUPS (บันทึกโดยโหมดตั้งค่า)
@@ -89,7 +91,7 @@ function buildReply_(it) {
   if (it.intent === INTENT.CASE_STATUS && !it.caseNos.length) return 'พิมพ์เลข บก. ที่ต้องการดูสถานะ เช่น 123/2568';
   var cases;
   try { cases = loadCaseRecords_(); }
-  catch (e) { console.warn('อ่านชีตหลักไม่ได้: ' + (e && e.message)); return NO_DATA_TEXT_; }
+  catch (e) { noteDataFailure_('LINE bot', e); return NO_DATA_TEXT_; }
   if (it.intent === INTENT.CASE_STATUS) {
     return it.caseNos.map(function (no) { return formatCaseStatus_(no, Stats.findCase(cases, no)); }).join('\n\n');
   }
