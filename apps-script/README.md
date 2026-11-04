@@ -76,6 +76,8 @@ Dashboard อ่าน Google Sheet ได้ 3 แบบ ระบบดูจ�
 
 3. กด **บันทึกคุณสมบัติของสคริปต์**
 
+> โครงงานนี้ใช้**บัญชี Google ของเจ้าของโครงงาน**เป็นเจ้าของระบบ (`ADMIN_EMAIL`) ส่วนบัญชีกลางของศูนย์ให้เพิ่มเป็นผู้ใช้ทั่วไปในหน้า **ผู้ใช้** (ขั้นที่ 9) ภายหลัง · อย่าใส่อีเมลจริงลงในไฟล์ของ repo
+
 > **ไม่ต้องใส่ Sheet ID ใด ๆ** (`CASES_SHEET_ID` / `LAB_SHEET_ID` เป็นของระบบเดิม) แหล่งข้อมูลเพิ่มในหน้าเว็บ (ขั้นที่ 8)
 > หลังใช้งาน จะเห็นคุณสมบัติชื่อ `DASH_CFG_N`, `DASH_CFG_0`, `DASH_CFG_1`, … เพิ่มขึ้นเอง นี่คือที่เก็บรายการแหล่งข้อมูลและผู้ใช้ **ห้ามแก้หรือลบเอง** (ถ้าแก้ผิด ระบบจะปฏิเสธทุกคนจนกว่าจะแก้กลับ)
 
@@ -416,4 +418,4 @@ node apps-script/test/run.js              # ทดสอบเซิร์ฟเ
 node apps-script/test/run.js --unit       # ทดสอบเฉพาะเซิร์ฟเวอร์
 ```
 
-ต้องมี `python3` + `openpyxl` · ผลลัพธ์และภาพหน้าจออยู่ที่ `apps-script/test/.out/` (ไม่เข้า git) ตั้ง `SHOT_DIR=…` เพื่อเปลี่ยนที่เก็บภาพ · ผลทดสอบล่าสุด: `docs/test-results/02-dashboard-apps-script.md` (Dashboard) และ `docs/test-results/03-linebot.md` (LINE bot + สรุปอัตโนมัติ) · ชุดทดสอบใช้ mock ของ `UrlFetchApp` ไม่เรียก LINE หรือ Gemini จริง
+ต้องมี `python3` + `openpyxl` · ผลลัพธ์และภาพหน้าจออยู่ที่ `apps-script/test/.out/` (ไม่เข้า git) ตั้ง `SHOT_DIR=…` เพื่อเปลี่ยนที่เก็บภาพ (`SRC_SHOT_DIR=…` สำหรับภาพหน้าแหล่งข้อมูล/ผู้ใช้) · ชุดทดสอบใช้แม่แบบใน `templates/` (เปล่าและใส่ข้อมูลจำลอง) ด้วย · ผลทดสอบล่าสุด: `docs/test-results/02-dashboard-apps-script.md` (Dashboard) และ `docs/test-results/03-linebot.md` (LINE bot + สรุปอัตโนมัติ) · ชุดทดสอบใช้ mock ของ `UrlFetchApp` ไม่เรียก LINE หรือ Gemini จริง
