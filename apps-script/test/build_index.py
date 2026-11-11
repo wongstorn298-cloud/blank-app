@@ -117,7 +117,7 @@ s = rep(s, ".f2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1
 .ck{display:flex;gap:8px;align-items:center;font-size:13px;margin-top:12px}.ck input{width:18px;height:18px;accent-color:var(--brand)}
 .acts-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
 .btn[disabled]:not([aria-busy="true"]){cursor:not-allowed}
-.src p a,.steps a{color:var(--brand);font-weight:600;text-underline-offset:3px}
+.src p a,.steps a{color:var(--brand-ink);font-weight:600;text-underline-offset:3px}
 .src p.err{color:var(--bad)}
 .chk{margin-top:12px}.chk td{vertical-align:top}
 .chk-notes{margin:12px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-2);display:flex;flex-direction:column;gap:4px}

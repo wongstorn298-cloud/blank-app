@@ -319,11 +319,15 @@ function messagePage_(access) {
   }[access.reason] || '';
   var html = '<!doctype html><html lang="th"><head><meta charset="utf-8">' +
     '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600&display=swap">' +
-    '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f6f8;color:#16202a;' +
-    'font:15px/1.6 "IBM Plex Sans Thai",system-ui,sans-serif;padding:16px;box-sizing:border-box}' +
-    '.c{max-width:520px;background:#fff;border:1px solid #dde3ea;border-radius:16px;padding:28px 26px}' +
-    'h1{font-size:22px;margin:0 0 8px}p{margin:8px 0;color:#3b4652}b{color:#16202a;overflow-wrap:anywhere}' +
-    '@media (prefers-color-scheme:dark){body{background:#0f1419;color:#e6edf3}.c{background:#161c23;border-color:#2a333d}p{color:#b3bfcc}b{color:#e6edf3}}</style>' +
+    // ธีม Desert Rose ชุดเดียวกับ Dashboard (Index.html): พื้นทราย · การ์ดขาวอุ่น · หัวข้อและแถบบนสี Deep Burgundy
+    '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6eee8;color:#2b1822;' +
+    'font:15px/1.6 "IBM Plex Sans Thai","Noto Sans Thai",system-ui,sans-serif;padding:16px;box-sizing:border-box}' +
+    '.c{max-width:520px;background:#fffdfb;border-radius:16px;padding:0 26px 24px;overflow:hidden;' +
+    'box-shadow:0 1px 2px rgba(93,46,70,.07),0 6px 20px rgba(93,46,70,.06)}' +
+    '.c:before{content:"";display:block;height:8px;margin:0 -26px 22px;background:#5d2e46}' +
+    'h1{font-size:22px;margin:0 0 8px;color:#5d2e46}p{margin:8px 0;color:#5a4350}b{color:#2b1822;overflow-wrap:anywhere}' +
+    '@media (prefers-color-scheme:dark){body{background:#1a1116;color:#f7ede9}.c{background:#241a1f;box-shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.25)}' +
+    '.c:before{background:#d4a5a5}h1{color:#e8bdbb}p{color:#dcc9c6}b{color:#f7ede9}}</style>' +
     '</head><body><main class="c"><h1>ไม่มีสิทธิ์เข้าถึง</h1>' +
     '<p>ขออภัย Dashboard นี้เปิดได้เฉพาะเจ้าหน้าที่ที่ได้รับอนุญาต</p>' +
     '<p>' + who + '</p>' + (why ? '<p>' + esc_(why) + '</p>' : '') +
