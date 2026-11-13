@@ -29,7 +29,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
-  /* Layout: one-column mobile app shell (sticky header, bottom tab bar), widening to a 2–5 column dashboard on tablets/desktop. */
+  /* Layout: one-column mobile app shell (sticky header, 5-tab bottom bar), widening to a multi-column dashboard on tablet/desktop. */
   :root {
     --bg: 241 245 245;  --card: 255 255 255; --ink: 15 35 38;  --muted: 84 105 109; --line: 218 227 228;
     --accent: 13 110 110; --accentink: 255 255 255; --soft: 225 240 239;
@@ -55,14 +55,13 @@
   html, body { background: rgb(var(--bg)); color: rgb(var(--ink)); }
   body { font-family: "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, system-ui, sans-serif; font-size: 16px; margin: 0; -webkit-tap-highlight-color: transparent; }
   body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 50; background: rgb(var(--card)); }
-  .gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
   [hidden] { display: none !important; }
+  .gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
   .num { font-variant-numeric: tabular-nums; }
   h1, h2, h3 { text-wrap: balance; }
-  .eyebrow { letter-spacing: .04em; }
   .chips { scrollbar-width: none; }
   .chips::-webkit-scrollbar { display: none; }
-  input, select, textarea { font-size: 16px; } /* prevents iOS zoom */
+  input, select, textarea { font-size: 16px; } /* prevents iOS zoom on focus */
   :focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
   .toast-in { animation: toast .2s ease-out; }
@@ -80,7 +79,7 @@
       </div>
       <div class="min-w-0 flex-1">
         <h1 class="text-lg font-bold leading-tight">คลังน้ำยาแล็บ DNA</h1>
-        <p class="text-xs text-muted truncate">ระบบคลังวัสดุและบำรุงรักษาเครื่องมือ</p>
+        <p class="text-xs text-muted truncate">ทะเบียนอุปกรณ์ · บันทึกรับ-เบิก · ประวัติแจ้งซ่อม</p>
       </div>
       <button id="sync-chip" type="button" class="shrink-0 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-muted" data-go="setup">โหมดทดลอง</button>
     </div>
@@ -89,22 +88,31 @@
   <main class="gutter max-w-6xl mx-auto pt-4">
 
     <!-- ============ DASHBOARD ============ -->
-    <section id="view-dashboard" data-view="dashboard" class="space-y-4">
+    <section data-view="dashboard" class="space-y-4">
       <div class="space-y-3">
         <div class="chips -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label="ช่วงเวลา" id="range-chips"></div>
         <div id="custom-range" class="grid grid-cols-2 gap-2" hidden>
-          <label class="block text-sm"><span class="mb-1 block text-muted">วันที่เริ่มต้น</span>
+          <label class="block text-sm"><span class="mb-1 block text-muted">Start Date (เริ่มต้น)</span>
             <input id="c-start" type="date" class="h-12 w-full rounded-xl border border-line bg-card px-3"></label>
-          <label class="block text-sm"><span class="mb-1 block text-muted">วันที่สิ้นสุด</span>
+          <label class="block text-sm"><span class="mb-1 block text-muted">End Date (สิ้นสุด)</span>
             <input id="c-end" type="date" class="h-12 w-full rounded-xl border border-line bg-card px-3"></label>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <p class="text-sm text-muted">ช่วงข้อมูล: <span id="range-label" class="font-semibold text-ink"></span></p>
-          <select id="mat-filter" class="ml-auto h-11 max-w-full rounded-xl border border-line bg-card px-3 text-sm min-w-0 sm:max-w-xs" aria-label="กรองตามวัสดุ"></select>
+          <select id="mat-filter" class="ml-auto h-11 w-full min-w-0 rounded-xl border border-line bg-card px-3 text-sm sm:w-auto sm:max-w-sm" aria-label="กรองตามอุปกรณ์"></select>
         </div>
       </div>
 
       <div id="kpis" class="grid grid-cols-2 gap-3 lg:grid-cols-5"></div>
+      <p id="calc-note" class="rounded-xl bg-soft px-3 py-2 text-xs text-muted"></p>
+
+      <div id="alert-panel" class="rounded-2xl border border-line bg-card p-4">
+        <div class="mb-2 flex flex-wrap items-baseline justify-between gap-x-2">
+          <h2 class="font-semibold">ต้องดำเนินการ</h2>
+          <span class="text-xs text-muted">ดูจากทะเบียนอุปกรณ์ ไม่ขึ้นกับช่วงวันที่</span>
+        </div>
+        <ul id="alert-list" class="divide-y divide-line"></ul>
+      </div>
 
       <div class="grid gap-4 lg:grid-cols-5">
         <div class="rounded-2xl border border-line bg-card p-4 lg:col-span-3">
@@ -115,18 +123,18 @@
           <div class="relative h-60"><canvas id="chart-flow" aria-label="กราฟรับเข้าเทียบเบิกออก"></canvas></div>
         </div>
         <div class="rounded-2xl border border-line bg-card p-4 lg:col-span-2">
-          <h2 class="mb-3 font-semibold">วัสดุที่เบิกออกมากที่สุด</h2>
-          <div class="relative h-60"><canvas id="chart-top" aria-label="กราฟวัสดุที่เบิกมากที่สุด"></canvas></div>
+          <h2 class="mb-3 font-semibold">เบิกออกมากที่สุด 5 อันดับ</h2>
+          <div class="relative h-60"><canvas id="chart-top" aria-label="กราฟรายการที่เบิกมากที่สุด"></canvas></div>
           <p id="top-empty" class="py-16 text-center text-sm text-muted" hidden>ไม่มีการเบิกในช่วงนี้</p>
         </div>
       </div>
 
       <div class="rounded-2xl border border-line bg-card p-4">
-        <div class="mb-2 flex items-center justify-between gap-2">
-          <h2 class="font-semibold">รายการเคลื่อนไหวล่าสุด</h2>
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 class="font-semibold">รายการรับ-เบิกล่าสุด</h2>
           <button type="button" id="btn-export" class="inline-flex h-11 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accentink">
             <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-            ส่งออก Excel (.xlsx)
+            Export Report to Excel (.xlsx)
           </button>
         </div>
         <ul id="recent" class="divide-y divide-line"></ul>
@@ -134,25 +142,27 @@
     </section>
 
     <!-- ============ ENTRY FORMS ============ -->
-    <section id="view-entry" data-view="entry" class="space-y-4" hidden>
+    <section data-view="entry" class="space-y-4" hidden>
       <div class="grid grid-cols-2 gap-1 rounded-2xl bg-soft p-1" role="tablist">
-        <button type="button" role="tab" data-ftab="stock" class="h-12 rounded-xl font-semibold">บันทึกสต็อก</button>
-        <button type="button" role="tab" data-ftab="repair" class="h-12 rounded-xl font-semibold">แจ้งซ่อมอุปกรณ์</button>
+        <button type="button" role="tab" data-ftab="stock" class="h-12 rounded-xl font-semibold">บันทึกรับ-เบิก</button>
+        <button type="button" role="tab" data-ftab="repair" class="h-12 rounded-xl font-semibold">แจ้งซ่อม</button>
       </div>
 
-      <!-- Stock form -->
+      <!-- Stock movement -->
       <form id="form-stock" class="space-y-4 rounded-2xl border border-line bg-card p-4" novalidate>
-        <div>
-          <label for="f-material" class="mb-1 block font-medium">ชื่อวัสดุ <span class="text-danger">*</span></label>
-          <input id="f-material" list="dl-materials" autocomplete="off" required placeholder="พิมพ์เพื่อค้นหา หรือพิมพ์ชื่อใหม่เพื่อเพิ่มวัสดุ" class="h-12 w-full rounded-xl border border-line bg-card px-3">
-          <p id="f-balance" class="mt-1 text-sm text-muted"></p>
+        <div class="space-y-2">
+          <label for="f-eq" class="block font-medium">อุปกรณ์ / วัสดุ <span class="text-danger">*</span></label>
+          <input id="f-eq-q" type="search" autocomplete="off" placeholder="พิมพ์เพื่อกรองรายการ (ชื่อหรือรหัส EQ)" class="h-11 w-full rounded-xl border border-line bg-card px-3 text-sm" aria-label="กรองรายการอุปกรณ์">
+          <select id="f-eq" required class="h-12 w-full rounded-xl border border-line bg-card px-3"></select>
+          <div id="f-eq-card" class="rounded-xl bg-soft p-3 text-sm" hidden></div>
+          <button type="button" data-go="registry" data-new-eq class="text-sm font-semibold text-accent">+ ไม่มีในรายการ? เพิ่มเข้าทะเบียนอุปกรณ์</button>
         </div>
 
         <fieldset>
           <legend class="mb-1 font-medium">ประเภทรายการ <span class="text-danger">*</span></legend>
           <div class="grid grid-cols-2 gap-2">
-            <button type="button" data-txtype="IN" class="h-14 rounded-xl border-2 text-base font-semibold">รับเข้า (+)</button>
-            <button type="button" data-txtype="OUT" class="h-14 rounded-xl border-2 text-base font-semibold">เบิกออก (−)</button>
+            <button type="button" data-txtype="IN" class="h-14 rounded-xl border-2 text-base font-semibold">IN รับเข้า (+)</button>
+            <button type="button" data-txtype="OUT" class="h-14 rounded-xl border-2 text-base font-semibold">OUT เบิกออก (−)</button>
           </div>
         </fieldset>
 
@@ -160,7 +170,7 @@
           <label for="f-qty" class="mb-1 block font-medium">จำนวน <span class="text-danger">*</span> <span id="f-unit" class="text-sm font-normal text-muted"></span></label>
           <div class="flex items-stretch gap-2">
             <button type="button" data-step="-1" class="h-14 w-14 shrink-0 rounded-xl border border-line text-2xl font-semibold" aria-label="ลดจำนวน 1">−</button>
-            <input id="f-qty" type="number" inputmode="numeric" min="0" step="1" value="1" required class="num h-14 w-full min-w-0 rounded-xl border border-line bg-card text-center text-2xl font-semibold">
+            <input id="f-qty" type="number" inputmode="numeric" min="1" step="1" value="1" required class="num h-14 w-full min-w-0 rounded-xl border border-line bg-card text-center text-2xl font-semibold">
           </div>
           <div class="mt-2 grid grid-cols-4 gap-2">
             <button type="button" data-step="1" class="h-12 rounded-xl bg-soft font-semibold">+1</button>
@@ -176,16 +186,8 @@
             <input id="f-date" type="date" required class="h-12 w-full rounded-xl border border-line bg-card px-3">
           </div>
           <div>
-            <label for="f-person" class="mb-1 block font-medium">ชื่อผู้แจ้งเบิก / ผู้บันทึก <span class="text-danger">*</span></label>
+            <label for="f-person" class="mb-1 block font-medium">ผู้เบิก / ผู้บันทึก <span class="text-danger">*</span></label>
             <input id="f-person" list="dl-people" autocomplete="name" required placeholder="เช่น วิภาวรรณ ศรีสุข" class="h-12 w-full rounded-xl border border-line bg-card px-3">
-          </div>
-          <div>
-            <label for="f-expiry" class="mb-1 block font-medium">วันหมดอายุอุปกรณ์ <span class="text-sm font-normal text-muted">(ไม่บังคับ)</span></label>
-            <input id="f-expiry" type="date" class="h-12 w-full rounded-xl border border-line bg-card px-3">
-          </div>
-          <div>
-            <label for="f-maint" class="mb-1 block font-medium">วันครบกำหนดบำรุงรักษา <span class="text-sm font-normal text-muted">(ไม่บังคับ)</span></label>
-            <input id="f-maint" type="date" class="h-12 w-full rounded-xl border border-line bg-card px-3">
           </div>
         </div>
         <div>
@@ -194,13 +196,14 @@
         </div>
         <p id="stock-error" class="rounded-xl bg-dangerbg px-3 py-2 text-sm text-danger" hidden></p>
         <button type="submit" class="h-14 w-full rounded-xl bg-accent text-lg font-semibold text-accentink">บันทึกรายการ</button>
+        <p class="text-xs text-muted">ทุกการบันทึกเพิ่มเป็นแถวใหม่ใน Transactions ไม่มีการแก้ไขแถวเดิม ถ้าบันทึกผิด ให้บันทึกรายการกลับทิศเพื่อปรับยอด</p>
       </form>
 
-      <!-- Repair form -->
+      <!-- Repair ticket -->
       <form id="form-repair" class="space-y-4 rounded-2xl border border-line bg-card p-4" novalidate hidden>
-        <div>
-          <label for="r-equipment" class="mb-1 block font-medium">ชื่อวัสดุ / อุปกรณ์ <span class="text-danger">*</span></label>
-          <input id="r-equipment" list="dl-equipment" autocomplete="off" required placeholder="เช่น เครื่องเพิ่มปริมาณดีเอ็นเอ รุ่น ProFlex" class="h-12 w-full rounded-xl border border-line bg-card px-3">
+        <div class="space-y-2">
+          <label for="r-eq" class="block font-medium">อุปกรณ์ที่แจ้งซ่อม <span class="text-danger">*</span></label>
+          <select id="r-eq" required class="h-12 w-full rounded-xl border border-line bg-card px-3"></select>
         </div>
         <div class="grid gap-4 sm:grid-cols-2">
           <div>
@@ -208,56 +211,53 @@
             <input id="r-date" type="date" required class="h-12 w-full rounded-xl border border-line bg-card px-3">
           </div>
           <div>
-            <label for="r-reporter" class="mb-1 block font-medium">ชื่อผู้แจ้งซ่อม <span class="text-danger">*</span></label>
+            <label for="r-reporter" class="mb-1 block font-medium">ผู้แจ้งซ่อม <span class="text-danger">*</span></label>
             <input id="r-reporter" list="dl-people" required placeholder="ชื่อ-นามสกุล" class="h-12 w-full rounded-xl border border-line bg-card px-3">
           </div>
         </div>
         <div>
-          <label for="r-issue" class="mb-1 block font-medium">อาการเสีย / สาเหตุ <span class="text-danger">*</span></label>
+          <label for="r-issue" class="mb-1 block font-medium">อาการเสีย <span class="text-danger">*</span></label>
           <textarea id="r-issue" rows="3" required placeholder="อธิบายอาการ เช่น ขึ้น error ที่หน้าจอ, เสียงดังผิดปกติ" class="w-full rounded-xl border border-line bg-card px-3 py-2"></textarea>
         </div>
         <fieldset>
-          <legend class="mb-1 font-medium">สถานะการซ่อม</legend>
+          <legend class="mb-1 font-medium">สถานะ</legend>
           <div class="grid grid-cols-3 gap-2" id="r-status-group"></div>
         </fieldset>
         <p id="repair-error" class="rounded-xl bg-dangerbg px-3 py-2 text-sm text-danger" hidden></p>
-        <button type="submit" class="h-14 w-full rounded-xl bg-accent text-lg font-semibold text-accentink">บันทึกแจ้งซ่อม</button>
+        <button type="submit" class="h-14 w-full rounded-xl bg-accent text-lg font-semibold text-accentink">บันทึกใบแจ้งซ่อม</button>
       </form>
 
       <div id="repair-list-wrap" class="rounded-2xl border border-line bg-card p-4" hidden>
-        <h2 class="mb-2 font-semibold">งานแจ้งซ่อมทั้งหมด</h2>
+        <h2 class="mb-1 font-semibold">ใบแจ้งซ่อมทั้งหมด</h2>
         <p class="mb-2 text-sm text-muted">เปลี่ยนสถานะได้จากรายการด้านล่าง</p>
         <ul id="repair-list" class="divide-y divide-line"></ul>
       </div>
     </section>
 
-    <!-- ============ INVENTORY ============ -->
-    <section id="view-stock" data-view="stock" class="space-y-3" hidden>
-      <div class="flex items-center gap-2">
-        <div class="relative min-w-0 flex-1">
-          <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input id="inv-search" type="search" placeholder="ค้นหาชื่อวัสดุ / อุปกรณ์" class="h-12 w-full rounded-xl border border-line bg-card pl-10 pr-3">
-        </div>
+    <!-- ============ STOCK (calculated) ============ -->
+    <section data-view="stock" class="space-y-3" hidden>
+      <div class="relative">
+        <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="inv-search" type="search" placeholder="ค้นหาชื่อหรือรหัส EQ" class="h-12 w-full rounded-xl border border-line bg-card pl-10 pr-3">
       </div>
       <div class="chips -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" id="inv-chips"></div>
-      <p class="text-sm text-muted">ตัวเลขยกมา / รับเข้า / เบิกออก ใช้ช่วงเดียวกับหน้าภาพรวม: <span id="inv-range" class="font-semibold text-ink"></span> · <span id="inv-count"></span></p>
+      <p class="text-sm text-muted">ช่วงเดียวกับหน้าภาพรวม: <span id="inv-range" class="font-semibold text-ink"></span> · <span id="inv-count"></span> · แตะรายการเพื่อดูบัญชีคุมยอด</p>
 
-      <!-- mobile cards -->
       <ul id="inv-cards" class="space-y-3 md:hidden"></ul>
 
-      <!-- desktop table -->
       <div class="hidden overflow-x-auto rounded-2xl border border-line bg-card md:block">
         <table class="w-full text-sm">
           <thead class="bg-soft text-left text-xs text-muted">
             <tr>
-              <th class="px-3 py-3 font-semibold">ชื่อวัสดุ</th>
+              <th class="px-3 py-3 font-semibold">รหัส / ชื่อ</th>
               <th class="px-3 py-3 text-right font-semibold">ยอดยกมา</th>
-              <th class="px-3 py-3 text-right font-semibold">รับเข้า (+)</th>
-              <th class="px-3 py-3 text-right font-semibold">เบิกออก (−)</th>
-              <th class="px-3 py-3 text-right font-semibold">คงเหลือสุทธิ</th>
+              <th class="px-3 py-3 text-right font-semibold">รับเข้าในช่วง</th>
+              <th class="px-3 py-3 text-right font-semibold">เบิกออกในช่วง</th>
+              <th class="px-3 py-3 text-right font-semibold">คงเหลือ</th>
+              <th class="px-3 py-3 text-right font-semibold">จุดเตือน</th>
               <th class="px-3 py-3 font-semibold">วันหมดอายุ</th>
-              <th class="px-3 py-3 font-semibold">วันบำรุงรักษา</th>
-              <th class="px-3 py-3 font-semibold">ประวัติแจ้งซ่อม</th>
+              <th class="px-3 py-3 font-semibold">บำรุงรักษา</th>
+              <th class="px-3 py-3 font-semibold">แจ้งซ่อม</th>
             </tr>
           </thead>
           <tbody id="inv-table" class="divide-y divide-line"></tbody>
@@ -265,12 +265,62 @@
       </div>
     </section>
 
+    <!-- ============ REGISTRY (Equipment Master) ============ -->
+    <section data-view="registry" class="space-y-4" hidden>
+      <form id="form-eq" class="space-y-4 rounded-2xl border border-line bg-card p-4" novalidate>
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <h2 id="eq-form-title" class="text-lg font-semibold">เพิ่มอุปกรณ์ใหม่</h2>
+            <p class="text-sm text-muted">รหัส <span id="eq-form-id" class="font-mono font-semibold text-ink"></span></p>
+          </div>
+          <button type="button" id="eq-cancel" class="h-10 rounded-xl border border-line px-3 text-sm font-semibold" hidden>ยกเลิกแก้ไข</button>
+        </div>
+        <div>
+          <label for="e-name" class="mb-1 block font-medium">ชื่อวัสดุ / อุปกรณ์ <span class="text-danger">*</span></label>
+          <input id="e-name" required autocomplete="off" placeholder="เช่น GlobalFiler IQC PCR Amplification Kit, 200 rxn" class="h-12 w-full rounded-xl border border-line bg-card px-3">
+        </div>
+        <fieldset>
+          <legend class="mb-1 font-medium">ประเภท</legend>
+          <div class="grid grid-cols-2 gap-2" id="e-cat-group"></div>
+        </fieldset>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label for="e-unit" class="mb-1 block font-medium">หน่วยนับ <span class="text-danger">*</span></label>
+            <input id="e-unit" list="dl-units" required placeholder="ชิ้น, กล่อง, ลิตร" class="h-12 w-full rounded-xl border border-line bg-card px-3">
+          </div>
+          <div>
+            <label for="e-min" class="mb-1 block font-medium">จุดเตือนสต็อกขั้นต่ำ</label>
+            <input id="e-min" type="number" inputmode="numeric" min="0" step="1" value="0" class="num h-12 w-full rounded-xl border border-line bg-card px-3 text-center">
+          </div>
+          <div>
+            <label for="e-exp" class="mb-1 block font-medium">วันหมดอายุ</label>
+            <input id="e-exp" type="date" class="h-12 w-full rounded-xl border border-line bg-card px-3">
+          </div>
+          <div>
+            <label for="e-maint" class="mb-1 block font-medium">วันครบกำหนดบำรุงรักษา</label>
+            <input id="e-maint" type="date" class="h-12 w-full rounded-xl border border-line bg-card px-3">
+          </div>
+        </div>
+        <p id="eq-error" class="rounded-xl bg-dangerbg px-3 py-2 text-sm text-danger" hidden></p>
+        <button type="submit" id="eq-submit" class="h-14 w-full rounded-xl bg-accent text-lg font-semibold text-accentink">เพิ่มเข้าทะเบียน</button>
+      </form>
+
+      <div class="rounded-2xl border border-line bg-card p-4">
+        <div class="mb-2 flex items-baseline justify-between gap-2">
+          <h2 class="font-semibold">ทะเบียนอุปกรณ์/วัสดุกลาง</h2>
+          <span id="eq-count" class="text-sm text-muted"></span>
+        </div>
+        <input id="eq-search" type="search" placeholder="ค้นหาชื่อหรือรหัส" class="mb-2 h-11 w-full rounded-xl border border-line bg-card px-3 text-sm" aria-label="ค้นหาในทะเบียน">
+        <ul id="eq-list" class="divide-y divide-line"></ul>
+      </div>
+    </section>
+
     <!-- ============ SETUP ============ -->
-    <section id="view-setup" data-view="setup" class="space-y-4" hidden>
+    <section data-view="setup" class="space-y-4" hidden>
       <form id="form-setup" class="space-y-4 rounded-2xl border border-line bg-card p-4" novalidate>
         <div>
           <h2 class="text-lg font-semibold">เชื่อมต่อ Google Sheets</h2>
-          <p class="text-sm text-muted">วาง URL ของ Google Apps Script Web App (ลงท้ายด้วย <span class="font-mono">/exec</span>) ทุกการบันทึกจะเพิ่มแถวใหม่ในชีตทันที</p>
+          <p class="text-sm text-muted">วาง URL ของ Google Apps Script Web App (ลงท้ายด้วย <span class="font-mono">/exec</span>) ระบบจะซิงก์ 3 ชีต: Equipment_Master, Transactions, Maintenance_Log</p>
         </div>
         <div>
           <label for="s-url" class="mb-1 block font-medium">Web App URL</label>
@@ -288,16 +338,18 @@
         <dl class="grid grid-cols-2 gap-2 text-sm">
           <div class="rounded-xl bg-soft p-3"><dt class="text-muted">แหล่งข้อมูล</dt><dd id="s-source" class="font-semibold"></dd></div>
           <div class="rounded-xl bg-soft p-3"><dt class="text-muted">ซิงก์ล่าสุด</dt><dd id="s-last" class="font-semibold"></dd></div>
+          <div class="rounded-xl bg-soft p-3"><dt class="text-muted">ทะเบียนอุปกรณ์</dt><dd id="s-n-master" class="num font-semibold"></dd></div>
+          <div class="rounded-xl bg-soft p-3"><dt class="text-muted">รายการรับ-เบิก</dt><dd id="s-n-tx" class="num font-semibold"></dd></div>
         </dl>
         <button type="button" id="btn-sync" class="h-12 w-full rounded-xl border border-line font-semibold">ส่งรายการค้างและดึงข้อมูลล่าสุด</button>
       </form>
 
       <div class="space-y-3 rounded-2xl border border-line bg-card p-4">
         <h2 class="text-lg font-semibold">ข้อมูลตัวอย่าง</h2>
-        <p class="text-sm text-muted">ข้อมูลที่โหลดไว้เป็นข้อมูลสมมติย้อนหลังประมาณ 14 เดือน ใช้ทดลองตัวกรองวันที่และการคำนวณ เมื่อเชื่อมต่อ Google Sheets ข้อมูลในชีตจะแทนที่ข้อมูลตัวอย่างทั้งหมด</p>
+        <p class="text-sm text-muted">ข้อมูลสมมติย้อนหลังประมาณ 3 ปี ทุกตัวเลขในแอปคำนวณจากบันทึกรับ-เบิกทั้งหมดทุกครั้ง ไม่มีการลบหรือสรุปยอดทิ้ง เมื่อเชื่อมต่อ Google Sheets ข้อมูลในชีตจะแทนที่ข้อมูลตัวอย่าง</p>
         <button type="button" id="btn-reset" class="h-12 w-full rounded-xl border border-line font-semibold text-danger">ล้างข้อมูลในเครื่องและโหลดข้อมูลตัวอย่างใหม่</button>
         <div id="reset-confirm" class="space-y-2 rounded-xl bg-dangerbg p-3" hidden>
-          <p class="text-sm text-danger">รายการที่ยังไม่ได้ส่งเข้า Google Sheets จะหายไป ยืนยันหรือไม่?</p>
+          <p class="text-sm text-danger">รายการที่ยังไม่ได้ส่งเข้า Google Sheets จะหายไป และจะตัดการเชื่อมต่อชีต ยืนยันหรือไม่?</p>
           <div class="grid grid-cols-2 gap-2">
             <button type="button" id="btn-reset-yes" class="h-11 rounded-xl bg-danger font-semibold text-white">ยืนยันล้างข้อมูล</button>
             <button type="button" id="btn-reset-no" class="h-11 rounded-xl border border-line bg-card font-semibold">ยกเลิก</button>
@@ -307,73 +359,62 @@
     </section>
   </main>
 
+  <!-- Item ledger (bottom sheet) -->
+  <div id="detail" class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" hidden>
+    <div class="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-card sm:rounded-3xl" role="dialog" aria-modal="true" aria-labelledby="detail-title" style="padding-bottom: env(safe-area-inset-bottom, 0px)">
+      <div class="gutter sticky top-0 flex items-start gap-3 border-b border-line bg-card py-4">
+        <div class="min-w-0 flex-1">
+          <p id="detail-id" class="font-mono text-xs text-muted"></p>
+          <h2 id="detail-title" class="font-semibold leading-snug"></h2>
+        </div>
+        <button type="button" id="detail-close" class="h-11 w-11 shrink-0 rounded-xl border border-line text-xl" aria-label="ปิด">×</button>
+      </div>
+      <div id="detail-body" class="gutter space-y-4 py-4"></div>
+    </div>
+  </div>
+
   <!-- Bottom navigation -->
   <nav class="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-card" style="padding-bottom: env(safe-area-inset-bottom, 0px)" aria-label="เมนูหลัก">
-    <div class="gutter mx-auto grid max-w-xl grid-cols-4">
+    <div class="gutter mx-auto grid max-w-2xl grid-cols-5">
       <button type="button" data-go="dashboard" class="navbtn flex h-16 flex-col items-center justify-center gap-0.5 text-xs font-medium">
         <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>ภาพรวม</button>
       <button type="button" data-go="entry" class="navbtn flex h-16 flex-col items-center justify-center gap-0.5 text-xs font-medium">
         <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>บันทึก</button>
       <button type="button" data-go="stock" class="navbtn flex h-16 flex-col items-center justify-center gap-0.5 text-xs font-medium">
-        <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5M12 12v9"/></svg>คลังวัสดุ</button>
+        <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5M12 12v9"/></svg>คงคลัง</button>
+      <button type="button" data-go="registry" class="navbtn flex h-16 flex-col items-center justify-center gap-0.5 text-xs font-medium">
+        <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>ทะเบียน</button>
       <button type="button" data-go="setup" class="navbtn flex h-16 flex-col items-center justify-center gap-0.5 text-xs font-medium">
         <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>ตั้งค่า</button>
     </div>
   </nav>
 
-  <div id="toast" class="pointer-events-none fixed inset-x-0 z-50 flex justify-center gutter" style="bottom: calc(5rem + env(safe-area-inset-bottom, 0px))"></div>
+  <div id="toast" class="pointer-events-none fixed inset-x-0 z-[60] flex justify-center gutter" style="bottom: calc(5rem + env(safe-area-inset-bottom, 0px))"></div>
 </div>
 
-<datalist id="dl-materials"></datalist>
-<datalist id="dl-equipment"></datalist>
 <datalist id="dl-people"></datalist>
+<datalist id="dl-units"><option value="ชิ้น"></option><option value="กล่อง"></option><option value="ขวด"></option><option value="ชุด"></option><option value="แพ็ก"></option><option value="หลอด"></option><option value="ลิตร"></option><option value="เครื่อง"></option></datalist>
 
 <script>
 'use strict';
 
-/* ------------------------------------------------------------------ *
- *  Catalog (de-duplicated from the purchase list)                     *
- * ------------------------------------------------------------------ */
-// kind: 'c' = consumable, 'e' = equipment. reorder/order/maxOut/rate/shelf drive the demo data only.
-const CATALOG = [
-  { name: '3500 Genetic Analyzer 8-Capillary Array, 36 cm', unit: 'ชุด', cat: 'อุปกรณ์สิ้นเปลือง', kind: 'c', reorder: 1, order: 2, maxOut: 1, rate: .006, shelf: 720 },
-  { name: '3500xL Genetic Analyzer 24-Capillary Array, 36 cm', unit: 'ชุด', cat: 'อุปกรณ์สิ้นเปลือง', kind: 'c', reorder: 0, order: 1, maxOut: 1, rate: .003, shelf: 720 },
-  { name: 'MicroAmp 96-Well Tray Retainer Set', unit: 'ชุด', cat: 'อุปกรณ์สิ้นเปลือง', kind: 'c', reorder: 2, order: 5, maxOut: 1, rate: .01, shelf: null },
-  { name: 'Anode Buffer Container (ABC) 3500 Series, 4 Pack', unit: 'แพ็ก', cat: 'น้ำยา 3500', kind: 'c', reorder: 3, order: 10, maxOut: 1, rate: .05, shelf: 420 },
-  { name: 'Cathode Buffer Container (CBC) 3500 Series, 4 Pack', unit: 'แพ็ก', cat: 'น้ำยา 3500', kind: 'c', reorder: 3, order: 10, maxOut: 1, rate: .05, shelf: 420 },
-  { name: 'POP-4 Polymer for 3500 Genetic Analyzer, 384 samples', unit: 'ขวด', cat: 'น้ำยา 3500', kind: 'c', reorder: 3, order: 8, maxOut: 1, rate: .04, shelf: 360 },
-  { name: 'POP-4 Polymer for 3500 Genetic Analyzer, 960 samples', unit: 'ขวด', cat: 'น้ำยา 3500', kind: 'c', reorder: 2, order: 5, maxOut: 1, rate: .02, shelf: 360 },
-  { name: 'Conditioning Reagent, 3500 Series', unit: 'ชิ้น', cat: 'น้ำยา 3500', kind: 'c', reorder: 2, order: 5, maxOut: 1, rate: .015, shelf: 540 },
-  { name: 'Hi-Di Formamide, 25 ml', unit: 'ขวด', cat: 'น้ำยา 3500', kind: 'c', reorder: 2, order: 6, maxOut: 1, rate: .03, shelf: 540 },
-  { name: 'Hi-Di Formamide, 250 ml', unit: 'ขวด', cat: 'น้ำยา 3500', kind: 'c', reorder: 1, order: 2, maxOut: 1, rate: .006, shelf: 540 },
-  { name: 'GeneScan 600 LIZ Size Standard v2.0, 800 rxn', unit: 'หลอด', cat: 'น้ำยา 3500', kind: 'c', reorder: 2, order: 4, maxOut: 1, rate: .015, shelf: 720 },
-  { name: 'GeneScan 500 LIZ Size Standard v2.0', unit: 'หลอด', cat: 'น้ำยา 3500', kind: 'c', reorder: 1, order: 2, maxOut: 1, rate: .005, shelf: 720 },
-  { name: 'AmpFLSTR Identifiler Plus Kit', unit: 'ชุด', cat: 'ชุดน้ำยา PCR', kind: 'c', reorder: 1, order: 3, maxOut: 1, rate: .01, shelf: 540 },
-  { name: 'AmpFLSTR Yfiler Plus PCR Amplification Kit, 100 rxn', unit: 'ชุด', cat: 'ชุดน้ำยา PCR', kind: 'c', reorder: 2, order: 4, maxOut: 1, rate: .02, shelf: 540 },
-  { name: 'VeriFiler Plus PCR Amplification Kit, 200 rxn', unit: 'ชุด', cat: 'ชุดน้ำยา PCR', kind: 'c', reorder: 2, order: 4, maxOut: 1, rate: .02, shelf: 540 },
-  { name: 'GlobalFiler IQC PCR Amplification Kit, 200 rxn', unit: 'ชุด', cat: 'ชุดน้ำยา PCR', kind: 'c', reorder: 3, order: 8, maxOut: 1, rate: .045, shelf: 540 },
-  { name: 'Quantifiler HP DNA Quantification Kit, 400 rxn', unit: 'ชุด', cat: 'ชุดน้ำยา PCR', kind: 'c', reorder: 3, order: 8, maxOut: 1, rate: .04, shelf: 540 },
-  { name: '7500 Pure Dye Calibration + FPPM', unit: 'ชุด', cat: 'ชุดน้ำยา PCR', kind: 'c', reorder: 0, order: 1, maxOut: 1, rate: .003, shelf: 540 },
-  { name: 'Primer', unit: 'หลอด', cat: 'ชุดน้ำยา PCR', kind: 'c', reorder: 2, order: 5, maxOut: 1, rate: .02, shelf: 900 },
-  { name: 'PrepFiler Automated Forensic DNA Extraction Kit', unit: 'ชุด', cat: 'สกัดดีเอ็นเอ', kind: 'c', reorder: 3, order: 8, maxOut: 1, rate: .04, shelf: 540 },
-  { name: 'DNA IQ Resin, 50 ml', unit: 'ขวด', cat: 'สกัดดีเอ็นเอ', kind: 'c', reorder: 1, order: 3, maxOut: 1, rate: .008, shelf: 720 },
-  { name: 'KingFisher 96 Deep-well Plate, V-bottom, 50 pk', unit: 'แพ็ก', cat: 'สกัดดีเอ็นเอ', kind: 'c', reorder: 2, order: 6, maxOut: 1, rate: .025, shelf: null },
-  { name: 'MicroAmp Optical Adhesive Film, 100 covers', unit: 'กล่อง', cat: 'วัสดุสิ้นเปลือง', kind: 'c', reorder: 2, order: 5, maxOut: 1, rate: .02, shelf: null },
-  { name: '1.5 mL Non-Stick RNase-free Microfuge Tubes', unit: 'แพ็ก', cat: 'วัสดุสิ้นเปลือง', kind: 'c', reorder: 3, order: 10, maxOut: 2, rate: .04, shelf: null },
-  { name: '1000 µL Conductive Filter Tips (3,840 tips/case)', unit: 'กล่อง', cat: 'วัสดุสิ้นเปลือง', kind: 'c', reorder: 2, order: 6, maxOut: 1, rate: .03, shelf: null },
-  { name: '300 µL Conductive Filter Tips (5,760 tips/case)', unit: 'กล่อง', cat: 'วัสดุสิ้นเปลือง', kind: 'c', reorder: 2, order: 6, maxOut: 1, rate: .03, shelf: null },
-  { name: 'ค่าเบ็ดเตล็ด (เสื้อ + ปักโลโก้ + ปักชื่อ)', unit: 'ชุด', cat: 'อื่น ๆ', kind: 'c', reorder: 0, order: 12, maxOut: 2, rate: .01, shelf: null },
-  { name: 'เครื่องตรวจดีเอ็นเอ 8 เส้น รุ่น 3500 Genetic Analyzer', unit: 'เครื่อง', cat: 'เครื่องมือ', kind: 'e' },
-  { name: 'เครื่องเพิ่มปริมาณดีเอ็นเอ รุ่น ProFlex 96 PCR System', unit: 'เครื่อง', cat: 'เครื่องมือ', kind: 'e' },
-  { name: 'เครื่องวัดปริมาณสารพันธุกรรมแบบเรียลไทม์ รุ่น 7500', unit: 'เครื่อง', cat: 'เครื่องมือ', kind: 'e' },
-];
-const CAT_BY_NAME = Object.fromEntries(CATALOG.map(c => [c.name, c]));
+/* ================================================================== *
+ *  Data model (mirrors the three Google Sheets exactly)              *
+ *                                                                    *
+ *  master   Equipment_Master  { Equipment_ID, Material_Name, Category, Unit, Min_Stock_Alert,
+ *                               Expiration_Date, Next_Maintenance_Date, Updated_At }
+ *  tx       Transactions      { Transaction_ID, Timestamp, Equipment_ID, Type: IN|OUT, Quantity,
+ *                               Requester, Notes }                         (append-only)
+ *  repairs  Maintenance_Log   { Repair_ID, Timestamp, Equipment_ID, Issue_Description, Reporter,
+ *                               Status, Updated_At }
+ *
+ *  No balance is ever stored. Every number comes from summing tx.
+ * ================================================================== */
+const CATEGORIES = ['สิ้นเปลือง', 'ทรัพย์สินถาวร'];
 const STATUSES = ['รอดำเนินการ', 'กำลังซ่อม', 'ซ่อมเสร็จแล้ว'];
 const ALERT_DAYS = 30;
 
-/* ------------------------------------------------------------------ *
- *  Date helpers (all dates are local 'YYYY-MM-DD' strings)            *
- * ------------------------------------------------------------------ */
+/* ---------------- dates ('YYYY-MM-DD' strings, local time) ---------------- */
 const pad = n => String(n).padStart(2, '0');
 const toISO = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const parseISO = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -387,194 +428,221 @@ const addMonths = (s, n) => {
 };
 const daysBetween = (a, b) => Math.round((parseISO(b) - parseISO(a)) / 864e5);
 const isISO = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+const dayOf = t => String(t.Timestamp).slice(0, 10);
+/** Timestamp for a chosen day, with the current clock time and local UTC offset. */
+function stamp(dateISO, clock) {
+  const n = new Date(), off = -n.getTimezoneOffset(), a = Math.abs(off);
+  const time = clock || `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+  return `${dateISO}T${time}${off >= 0 ? '+' : '-'}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
+}
 const fmtDate = (s, opt) => isISO(s) ? parseISO(s).toLocaleDateString('th-TH', opt || { day: 'numeric', month: 'short', year: '2-digit' }) : '–';
 const fmtNum = n => Number(n || 0).toLocaleString('th-TH');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const uid = p => p + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const rid = p => `${p}-${today().replace(/-/g, '')}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-/* ------------------------------------------------------------------ *
- *  Storage                                                            *
- * ------------------------------------------------------------------ */
-const DATA_KEY = 'labstock:data:v1', SET_KEY = 'labstock:settings:v1';
+/* ---------------- storage ---------------- */
+const DATA_KEY = 'labstock:data:v2', SET_KEY = 'labstock:settings:v1', UI_KEY = 'labstock:ui:v2';
 const lsGet = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked: app still works in memory */ } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* blocked storage: keep working in memory */ } };
 
-let settings = Object.assign({ url: '', key: '' }, lsGet(SET_KEY) || {});
-let state = lsGet(DATA_KEY);
-if (!state || !Array.isArray(state.tx)) state = freshMock();
-function freshMock() { const m = genMock(); return { tx: m.tx, repairs: m.repairs, source: 'mock', lastSync: null }; }
-function save() { lsSet(DATA_KEY, state); }
 
-/* ------------------------------------------------------------------ *
- *  Realistic Thai demo data (deterministic, relative to today)        *
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ *  Demo data: ~3 years of history, deterministic, relative to today   *
+ * ================================================================== */
+// min = Min_Stock_Alert; order/maxOut/rate/shelf only drive the simulation; exp/maint pin dates (days from today).
+const CATALOG = [
+  { name: '3500 Genetic Analyzer 8-Capillary Array, 36 cm', unit: 'ชุด', min: 1, order: 2, maxOut: 1, rate: .006, shelf: 1 },
+  { name: '3500xL Genetic Analyzer 24-Capillary Array, 36 cm', unit: 'ชุด', min: 1, order: 1, maxOut: 1, rate: .002, shelf: 1 },
+  { name: 'MicroAmp 96-Well Tray Retainer Set', unit: 'ชุด', min: 2, order: 5, maxOut: 1, rate: .008 },
+  { name: 'Anode Buffer Container (ABC) 3500 Series, 4 Pack', unit: 'แพ็ก', min: 3, order: 10, maxOut: 1, rate: .05, shelf: 1 },
+  { name: 'Cathode Buffer Container (CBC) 3500 Series, 4 Pack', unit: 'แพ็ก', min: 3, order: 10, maxOut: 1, rate: .05, shelf: 1 },
+  { name: 'POP-4 Polymer for 3500 Genetic Analyzer, 384 samples', unit: 'ขวด', min: 3, order: 8, maxOut: 1, rate: .04, shelf: 1 },
+  { name: 'POP-4 Polymer for 3500 Genetic Analyzer, 960 samples', unit: 'ขวด', min: 2, order: 5, maxOut: 1, rate: .02, shelf: 1, exp: 58 },
+  { name: 'Conditioning Reagent, 3500 Series', unit: 'ชิ้น', min: 2, order: 5, maxOut: 1, rate: .015, shelf: 1, exp: -4 },
+  { name: 'Hi-Di Formamide, 25 ml', unit: 'ขวด', min: 2, order: 6, maxOut: 1, rate: .03, shelf: 1, exp: 12 },
+  { name: 'Hi-Di Formamide, 250 ml', unit: 'ขวด', min: 1, order: 2, maxOut: 1, rate: .006, shelf: 1 },
+  { name: 'GeneScan 600 LIZ Size Standard v2.0, 800 rxn', unit: 'หลอด', min: 2, order: 4, maxOut: 1, rate: .015, shelf: 1 },
+  { name: 'GeneScan 500 LIZ Size Standard v2.0', unit: 'หลอด', min: 1, order: 2, maxOut: 1, rate: .004, shelf: 1 },
+  { name: 'AmpFLSTR Identifiler Plus Kit', unit: 'ชุด', min: 1, order: 3, maxOut: 1, rate: .01, shelf: 1 },
+  { name: 'AmpFLSTR Yfiler Plus PCR Amplification Kit, 100 rxn', unit: 'ชุด', min: 2, order: 4, maxOut: 1, rate: .02, shelf: 1 },
+  { name: 'VeriFiler Plus PCR Amplification Kit, 200 rxn', unit: 'ชุด', min: 2, order: 4, maxOut: 1, rate: .02, shelf: 1 },
+  { name: 'GlobalFiler IQC PCR Amplification Kit, 200 rxn', unit: 'ชุด', min: 3, order: 8, maxOut: 1, rate: .045, shelf: 1 },
+  { name: 'Quantifiler HP DNA Quantification Kit, 400 rxn', unit: 'ชุด', min: 3, order: 8, maxOut: 1, rate: .04, shelf: 1, exp: 26 },
+  { name: '7500 Pure Dye Calibration + FPPM', unit: 'ชุด', min: 0, order: 1, maxOut: 1, rate: .002, shelf: 1 },
+  { name: 'Primer', unit: 'หลอด', min: 2, order: 5, maxOut: 1, rate: .02, shelf: 1 },
+  { name: 'PrepFiler Automated Forensic DNA Extraction Kit', unit: 'ชุด', min: 3, order: 8, maxOut: 1, rate: .04, shelf: 1 },
+  { name: 'DNA IQ Resin, 50 ml', unit: 'ขวด', min: 1, order: 3, maxOut: 1, rate: .008, shelf: 1 },
+  { name: 'KingFisher 96 Deep-well Plate, V-bottom, 50 pk', unit: 'แพ็ก', min: 2, order: 6, maxOut: 1, rate: .025 },
+  { name: 'MicroAmp Optical Adhesive Film, 100 covers', unit: 'กล่อง', min: 2, order: 5, maxOut: 1, rate: .02 },
+  { name: '1.5 mL Non-Stick RNase-free Microfuge Tubes', unit: 'แพ็ก', min: 3, order: 10, maxOut: 2, rate: .04 },
+  { name: '1000 µL Conductive Filter Tips (3,840 tips/case)', unit: 'กล่อง', min: 2, order: 6, maxOut: 1, rate: .03 },
+  { name: '300 µL Conductive Filter Tips (5,760 tips/case)', unit: 'กล่อง', min: 2, order: 6, maxOut: 1, rate: .03 },
+  { name: 'ค่าเบ็ดเตล็ด (เสื้อ + ปักโลโก้ + ปักชื่อ)', unit: 'ชุด', min: 0, order: 12, maxOut: 2, rate: .01 },
+  { name: 'เครื่องตรวจดีเอ็นเอ 8 เส้น รุ่น 3500 Genetic Analyzer', unit: 'เครื่อง', fixed: true, maint: 9 },
+  { name: 'เครื่องเพิ่มปริมาณดีเอ็นเอ รุ่น ProFlex 96 PCR System', unit: 'เครื่อง', fixed: true, maint: -3 },
+  { name: 'เครื่องวัดปริมาณสารพันธุกรรมแบบเรียลไทม์ รุ่น 7500', unit: 'เครื่อง', fixed: true, maint: 75 },
+];
+const HISTORY_DAYS = 1050;
+
 function genMock() {
-  let seed = 20261112;
+  let seed = 20261113;
   const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const pick = a => a[Math.floor(rnd() * a.length)];
   const people = ['สมชาย ใจดี', 'วิภาวรรณ ศรีสุข', 'ธนพล แก้วมณี', 'ปรียานุช บุญมา', 'กิตติศักดิ์ ทองดี', 'อรุณี พรหมวงศ์'];
-  const t0 = today(), START = -420, tx = [];
-  let n = 0;
-  const add = (o) => tx.push(Object.assign({ id: 'demo-' + (++n), timestamp: o.date + 'T09:00:00', expiry: '', maintenance: '', note: '' }, o));
+  const t0 = today();
+  const clock = () => `${pad(8 + Math.floor(rnd() * 9))}:${pad(Math.floor(rnd() * 60))}:${pad(Math.floor(rnd() * 60))}`;
 
-  for (const it of CATALOG.filter(c => c.kind === 'c')) {
+  const master = CATALOG.map((c, i) => ({
+    Equipment_ID: 'EQ-' + String(i + 1).padStart(3, '0'),
+    Material_Name: c.name,
+    Category: c.fixed ? 'ทรัพย์สินถาวร' : 'สิ้นเปลือง',
+    Unit: c.unit,
+    Min_Stock_Alert: c.fixed ? 0 : c.min,
+    Expiration_Date: c.exp != null ? addDays(t0, c.exp) : c.shelf ? addDays(t0, 95 + Math.floor(rnd() * 450)) : '',
+    Next_Maintenance_Date: c.maint != null ? addDays(t0, c.maint) : '',
+    Updated_At: '',
+  }));
+
+  const raw = [];
+  const add = (day, eq, type, qty, who, notes) => raw.push({ Timestamp: stamp(addDays(t0, day), clock()), Equipment_ID: eq, Type: type, Quantity: qty, Requester: who, Notes: notes });
+  CATALOG.forEach((c, i) => {
+    const eq = master[i].Equipment_ID;
+    if (c.fixed) { add(-HISTORY_DAYS, eq, 'IN', 1, 'สมชาย ใจดี', 'ครุภัณฑ์ 6640-001-' + String(i).padStart(4, '0')); return; }
     let bal = 0, incoming = null;
-    const lotNote = () => 'Lot ' + Math.floor(1e6 + rnd() * 8e6);
-    const restock = (day, qty) => {
-      const date = addDays(t0, day);
-      add({ date, material: it.name, type: 'IN', qty, person: pick(people), expiry: it.shelf ? addDays(date, it.shelf + Math.floor(rnd() * 60)) : '', note: it.shelf ? lotNote() : 'ใบสั่งซื้อ PO-' + (6800 + n) });
-      bal += qty;
-    };
-    restock(START, it.order + it.reorder);
-    for (let day = START + 1; day <= 0; day++) {
+    const restock = (day, q) => { add(day, eq, 'IN', q, pick(people), c.shelf ? 'Lot ' + Math.floor(1e6 + rnd() * 8e6) : 'PO-' + (6800 + raw.length)); bal += q; };
+    restock(-HISTORY_DAYS, c.order + c.min);
+    for (let day = -HISTORY_DAYS + 1; day <= 0; day++) {
       if (incoming && incoming.day === day) { restock(day, incoming.qty); incoming = null; }
-      const boost = day >= -3 ? 4 : 1;
-      if (rnd() < it.rate * boost) {
-        const q = 1 + Math.floor(rnd() * it.maxOut);
-        if (bal >= q) { add({ date: addDays(t0, day), material: it.name, type: 'OUT', qty: q, person: pick(people), note: 'ใบเบิก ' + (100 + n) }); bal -= q; }
+      if (rnd() < c.rate * (day >= -6 ? 4 : 1)) {
+        const q = 1 + Math.floor(rnd() * c.maxOut);
+        if (bal >= q) { add(day, eq, 'OUT', q, pick(people), 'ใบเบิก ' + (100 + raw.length)); bal -= q; }
       }
-      if (!incoming && bal <= it.reorder && day < -5) incoming = { day: day + 7 + Math.floor(rnd() * 10), qty: it.order };
+      if (!incoming && bal <= c.min && day < -12) incoming = { day: day + 7 + Math.floor(rnd() * 10), qty: c.order };
     }
-  }
-  // lots that should raise expiry alerts
-  add({ date: addDays(t0, -15), material: 'Hi-Di Formamide, 25 ml', type: 'IN', qty: 4, person: 'วิภาวรรณ ศรีสุข', expiry: addDays(t0, 12), note: 'Lot 2405117 (ล็อตเก่าจากผู้ขาย)' });
-  add({ date: addDays(t0, -40), material: 'Quantifiler HP DNA Quantification Kit, 400 rxn', type: 'IN', qty: 5, person: 'ธนพล แก้วมณี', expiry: addDays(t0, 26), note: 'Lot 2412093' });
-  add({ date: addDays(t0, -30), material: 'Conditioning Reagent, 3500 Series', type: 'IN', qty: 2, person: 'สมชาย ใจดี', expiry: addDays(t0, -4), note: 'Lot 2310442 (รับโอนจากศูนย์ฯ อายุสั้น)' });
-  // today's activity
-  add({ date: t0, material: 'GlobalFiler IQC PCR Amplification Kit, 200 rxn', type: 'IN', qty: 6, person: 'ปรียานุช บุญมา', expiry: addDays(t0, 520), note: 'Lot 2509871' });
+  });
+  raw.sort((a, b) => a.Timestamp.localeCompare(b.Timestamp));
+  const tx = raw.map((t, i) => Object.assign({ Transaction_ID: `TX-${dayOf(t).replace(/-/g, '')}-${String(i + 1).padStart(4, '0')}` }, t));
 
-  // equipment: one unit each, with next maintenance dates
-  const eq = CATALOG.filter(c => c.kind === 'e');
-  add({ date: addDays(t0, -700), material: eq[0].name, type: 'IN', qty: 1, person: 'สมชาย ใจดี', note: 'ครุภัณฑ์ 6640-001-0001' });
-  add({ date: addDays(t0, -700), material: eq[1].name, type: 'IN', qty: 1, person: 'สมชาย ใจดี', note: 'ครุภัณฑ์ 6640-001-0002' });
-  add({ date: addDays(t0, -700), material: eq[2].name, type: 'IN', qty: 1, person: 'สมชาย ใจดี', note: 'ครุภัณฑ์ 6640-001-0003' });
-  // maintenance-schedule updates: qty 0 rows that only set the next maintenance date
-  tx.push({ id: 'demo-m1', timestamp: addDays(t0, -170) + 'T10:00:00', date: addDays(t0, -170), material: eq[0].name, type: 'IN', qty: 0, person: 'กิตติศักดิ์ ทองดี', expiry: '', maintenance: addDays(t0, 9), note: 'บันทึกกำหนด PM รอบถัดไป' });
-  tx.push({ id: 'demo-m2', timestamp: addDays(t0, -120) + 'T10:00:00', date: addDays(t0, -120), material: eq[1].name, type: 'IN', qty: 0, person: 'กิตติศักดิ์ ทองดี', expiry: '', maintenance: addDays(t0, -3), note: 'หลังสอบเทียบประจำปี' });
-  tx.push({ id: 'demo-m3', timestamp: addDays(t0, -200) + 'T10:00:00', date: addDays(t0, -200), material: eq[2].name, type: 'IN', qty: 0, person: 'กิตติศักดิ์ ทองดี', expiry: '', maintenance: addDays(t0, 75), note: 'หลังสอบเทียบประจำปี' });
-
+  const eqByName = n => master.find(m => m.Material_Name.startsWith(n)).Equipment_ID;
   const repairs = [
-    { id: 'demo-r1', date: addDays(t0, -200), equipment: eq[2].name, issue: 'สอบเทียบและบำรุงรักษาประจำปี พร้อมเปลี่ยน 7500 Pure Dye Calibration + FPPM', reporter: 'กิตติศักดิ์ ทองดี', status: 'ซ่อมเสร็จแล้ว' },
-    { id: 'demo-r2', date: addDays(t0, -120), equipment: eq[1].name, issue: 'จ้างบำรุงรักษาและสอบเทียบประจำปีแบบรวมอะไหล่ (block uniformity ไม่ผ่านที่ well A1)', reporter: 'กิตติศักดิ์ ทองดี', status: 'ซ่อมเสร็จแล้ว' },
-    { id: 'demo-r3', date: addDays(t0, -61), equipment: '3500 Genetic Analyzer 8-Capillary Array, 36 cm', issue: 'Capillary array รั่วที่ detection cell, spatial calibration ไม่ผ่าน ต้องเปลี่ยน array ใหม่', reporter: 'วิภาวรรณ ศรีสุข', status: 'ซ่อมเสร็จแล้ว' },
-    { id: 'demo-r4', date: addDays(t0, -6), equipment: eq[0].name, issue: 'สัญญาณ fluorescence ต่ำผิดปกติ และขึ้นข้อความ "Oven temperature out of range"', reporter: 'ธนพล แก้วมณี', status: 'กำลังซ่อม' },
-    { id: 'demo-r5', date: addDays(t0, -1), equipment: eq[1].name, issue: 'ฝา heated lid ปิดไม่สนิท เครื่องแจ้ง Lid error ก่อนเริ่มรอบ PCR', reporter: 'ปรียานุช บุญมา', status: 'รอดำเนินการ' },
-  ].map(r => Object.assign({ timestamp: r.date + 'T11:00:00', updatedAt: '' }, r));
-
-  tx.sort((a, b) => (a.date + a.timestamp).localeCompare(b.date + b.timestamp));
-  return { tx, repairs };
+    [-640, 'เครื่องเพิ่มปริมาณดีเอ็นเอ', 'จ้างบำรุงรักษาและสอบเทียบประจำปีแบบรวมอะไหล่', 'กิตติศักดิ์ ทองดี', 'ซ่อมเสร็จแล้ว'],
+    [-560, 'เครื่องวัดปริมาณสารพันธุกรรม', 'สอบเทียบและบำรุงรักษาเครื่อง รุ่น 7500 ในสภาพจริง', 'กิตติศักดิ์ ทองดี', 'ซ่อมเสร็จแล้ว'],
+    [-200, 'เครื่องวัดปริมาณสารพันธุกรรม', 'สอบเทียบประจำปี พร้อมเปลี่ยน 7500 Pure Dye Calibration + FPPM', 'กิตติศักดิ์ ทองดี', 'ซ่อมเสร็จแล้ว'],
+    [-120, 'เครื่องเพิ่มปริมาณดีเอ็นเอ', 'จ้างบำรุงรักษาและสอบเทียบแบบรวมอะไหล่ (block uniformity ไม่ผ่านที่ well A1)', 'กิตติศักดิ์ ทองดี', 'ซ่อมเสร็จแล้ว'],
+    [-61, '3500 Genetic Analyzer 8-Capillary', 'Capillary array รั่วที่ detection cell, spatial calibration ไม่ผ่าน', 'วิภาวรรณ ศรีสุข', 'ซ่อมเสร็จแล้ว'],
+    [-6, 'เครื่องตรวจดีเอ็นเอ', 'สัญญาณ fluorescence ต่ำผิดปกติ และขึ้นข้อความ "Oven temperature out of range"', 'ธนพล แก้วมณี', 'กำลังซ่อม'],
+    [-1, 'เครื่องเพิ่มปริมาณดีเอ็นเอ', 'ฝา heated lid ปิดไม่สนิท เครื่องแจ้ง Lid error ก่อนเริ่มรอบ PCR', 'ปรียานุช บุญมา', 'รอดำเนินการ'],
+  ].map(([d, n, issue, who, st], i) => ({
+    Repair_ID: `RP-${addDays(t0, d).replace(/-/g, '')}-${String(i + 1).padStart(3, '0')}`,
+    Timestamp: stamp(addDays(t0, d), '10:30:00'), Equipment_ID: eqByName(n), Issue_Description: issue, Reporter: who, Status: st, Updated_At: '',
+  }));
+  return { master, tx, repairs };
 }
 
-/* ------------------------------------------------------------------ *
- *  Calculations                                                       *
- * ------------------------------------------------------------------ */
-function allMaterials() {
-  const set = new Set(CATALOG.map(c => c.name));
-  state.tx.forEach(t => set.add(t.material));
-  state.repairs.forEach(r => set.add(r.equipment));
-  return [...set].sort((a, b) => a.localeCompare(b, 'th'));
-}
-function metaOf(name) { return CAT_BY_NAME[name] || { unit: '', cat: 'เพิ่มใหม่', kind: 'c' }; }
-function minDate() { return state.tx.reduce((m, t) => t.date < m ? t.date : m, today()); }
-function maxDate() { return state.tx.reduce((m, t) => t.date > m ? t.date : m, today()); }
+/* ---------------- app state (after CATALOG, which the demo data needs) ---------------- */
+let settings = Object.assign({ url: '', key: '' }, lsGet(SET_KEY) || {});
+let state = lsGet(DATA_KEY);
+if (!state || !Array.isArray(state.master) || !Array.isArray(state.tx)) state = freshMock();
+function freshMock() { const m = genMock(); return { master: m.master, tx: m.tx, repairs: m.repairs, txCursor: 0, source: 'mock', lastSync: null }; }
+function save() { lsSet(DATA_KEY, state); }
 
-/** Totals per material: opening (before start), in/out (start..end), closing. */
-function aggregate(start, end, onlyMaterial) {
-  const map = new Map();
-  const row = name => map.get(name) || (map.set(name, { name, open: 0, inQ: 0, outQ: 0 }), map.get(name));
+/* ================================================================== *
+ *  Calculation engine                                                 *
+ * ================================================================== */
+const eqIndex = () => new Map(state.master.map(m => [m.Equipment_ID, m]));
+const nameOf = id => (eqIndex().get(id) || {}).Material_Name || id;
+const unitOf = id => (eqIndex().get(id) || {}).Unit || '';
+const firstDay = () => state.tx.reduce((m, t) => dayOf(t) < m ? dayOf(t) : m, today());
+const lastDay = () => state.tx.reduce((m, t) => dayOf(t) > m ? dayOf(t) : m, today());
+
+/**
+ * Opening / Period IN / Period OUT / Closing per item for [start, end].
+ *   Opening = Σ IN − Σ OUT with date < start
+ *   Closing = Opening + Period IN − Period OUT
+ * Transactions after `end` are ignored, so Closing is the balance at the end of the range.
+ */
+function balances(start, end) {
+  const blank = () => ({ open: 0, inQ: 0, outQ: 0, close: 0 });
+  const map = new Map(state.master.map(m => [m.Equipment_ID, blank()]));
   for (const t of state.tx) {
-    if (onlyMaterial && t.material !== onlyMaterial) continue;
-    const q = Number(t.qty) || 0, r = row(t.material), sign = t.type === 'OUT' ? -1 : 1;
-    if (t.date < start) r.open += sign * q;
-    else if (t.date <= end) t.type === 'OUT' ? (r.outQ += q) : (r.inQ += q);
+    if (!map.has(t.Equipment_ID)) map.set(t.Equipment_ID, blank());
+    const r = map.get(t.Equipment_ID), d = dayOf(t), q = Number(t.Quantity) || 0;
+    if (d < start) r.open += t.Type === 'OUT' ? -q : q;
+    else if (d <= end) { if (t.Type === 'OUT') r.outQ += q; else r.inQ += q; }
   }
   for (const r of map.values()) r.close = r.open + r.inQ - r.outQ;
   return map;
 }
-function totals(map) {
-  const s = { open: 0, inQ: 0, outQ: 0, close: 0 };
-  for (const r of map.values()) { s.open += r.open; s.inQ += r.inQ; s.outQ += r.outQ; s.close += r.close; }
-  return s;
+function sumRows(rows) {
+  return rows.reduce((s, r) => ({ open: s.open + r.open, inQ: s.inQ + r.inQ, outQ: s.outQ + r.outQ, close: s.close + r.close }), { open: 0, inQ: 0, outQ: 0, close: 0 });
 }
+function onHand(id) { return state.tx.reduce((s, t) => t.Equipment_ID === id ? s + (t.Type === 'OUT' ? -1 : 1) * (Number(t.Quantity) || 0) : s, 0); }
 
-/** Current status per material (as of today): nearest expiry of stock on hand (FEFO), next maintenance, repairs. */
-function materialStatus() {
-  const t0 = today(), info = new Map();
-  const get = name => info.get(name) || (info.set(name, { lots: [], maint: '', maintSet: '', repairs: [], onHand: 0 }), info.get(name));
-  const sorted = [...state.tx].filter(t => t.date <= t0).sort((a, b) => (a.date + a.timestamp).localeCompare(b.date + b.timestamp));
-  for (const t of sorted) {
-    const m = get(t.material), q = Number(t.qty) || 0;
-    if (t.type === 'OUT') {
-      m.onHand -= q;
-      let left = q;
-      // first expire, first out; skip lots already expired on that day, then fall back to any lot
-      const order = [...m.lots].sort((a, b) => (a.exp || '9999') .localeCompare(b.exp || '9999'));
-      const usable = order.filter(l => !l.exp || l.exp >= t.date).concat(order.filter(l => l.exp && l.exp < t.date));
-      for (const l of usable) { if (!left) break; const take = Math.min(l.qty, left); l.qty -= take; left -= take; }
-    } else {
-      m.onHand += q;
-      if (q > 0) m.lots.push({ exp: isISO(t.expiry) ? t.expiry : '', qty: q });
-    }
-    if (isISO(t.maintenance) && t.date >= m.maintSet) { m.maint = t.maintenance; m.maintSet = t.date; }
-  }
-  for (const r of state.repairs) get(r.equipment).repairs.push(r);
-  for (const [, m] of info) {
-    const live = m.lots.filter(l => l.qty > 0 && l.exp).sort((a, b) => a.exp.localeCompare(b.exp));
-    m.exp = live[0]?.exp || '';
-    m.expQty = live.filter(l => l.exp === m.exp).reduce((s, l) => s + l.qty, 0);
-    m.expDays = m.exp ? daysBetween(t0, m.exp) : null;
-    m.maintDays = m.maint ? daysBetween(t0, m.maint) : null;
-    m.expAlert = m.exp && m.expDays <= ALERT_DAYS;
-    m.maintAlert = m.maint && m.maintDays <= ALERT_DAYS;
-    m.openRepairs = m.repairs.filter(r => r.status !== 'ซ่อมเสร็จแล้ว').length;
-    m.repairs.sort((a, b) => b.date.localeCompare(a.date));
-  }
-  return info;
+/** Alerts read only the master record (dates, min stock) plus the live balance. */
+function alertOf(m, bal) {
+  const t0 = today();
+  const expDays = isISO(m.Expiration_Date) ? daysBetween(t0, m.Expiration_Date) : null;
+  const maintDays = isISO(m.Next_Maintenance_Date) ? daysBetween(t0, m.Next_Maintenance_Date) : null;
+  const a = {
+    expDays, maintDays,
+    exp: expDays !== null && expDays <= ALERT_DAYS,
+    maint: maintDays !== null && maintDays <= ALERT_DAYS,
+    low: Number(m.Min_Stock_Alert) > 0 && bal <= Number(m.Min_Stock_Alert),
+  };
+  a.any = a.exp || a.maint || a.low;
+  return a;
 }
+function openRepairs(id) { return state.repairs.filter(r => r.Equipment_ID === id && r.Status !== 'ซ่อมเสร็จแล้ว').length; }
 
-/* ------------------------------------------------------------------ *
+/* ================================================================== *
  *  UI state & routing                                                 *
- * ------------------------------------------------------------------ */
+ * ================================================================== */
 const PRESETS = [
   { id: 'today', label: 'วันนี้' },
-  { id: '4d', label: '1-4 วันล่าสุด' },
+  { id: '7d', label: '7 วันล่าสุด' },
+  { id: '30d', label: '30 วันล่าสุด' },
   { id: '3m', label: '3 เดือน' },
   { id: '6m', label: '6 เดือน' },
+  { id: '1y', label: '1 ปี' },
   { id: 'all', label: 'ทั้งหมด' },
-  { id: 'custom', label: 'เลือกช่วงวันที่เริ่มต้น - สิ้นสุด' },
+  { id: 'custom', label: 'กำหนดวันที่เอง' },
 ];
 const INV_FILTERS = [
   { id: 'all', label: 'ทั้งหมด' },
-  { id: 'alert', label: 'แจ้งเตือน' },
+  { id: 'alert', label: 'ต้องดำเนินการ' },
   { id: 'exp', label: 'ใกล้หมดอายุ' },
-  { id: 'maint', label: 'ถึงกำหนดบำรุงรักษา' },
-  { id: 'repair', label: 'มีงานซ่อมค้าง' },
-  { id: 'moved', label: 'มีความเคลื่อนไหว' },
+  { id: 'maint', label: 'ถึงกำหนดบำรุง' },
+  { id: 'low', label: 'ต่ำกว่าจุดเตือน' },
+  { id: 'สิ้นเปลือง', label: 'สิ้นเปลือง' },
+  { id: 'ทรัพย์สินถาวร', label: 'ทรัพย์สินถาวร' },
 ];
-const ui = Object.assign({ preset: '3m', cStart: addDays(today(), -29), cEnd: today(), material: '', invFilter: 'all', search: '', formTab: 'stock', txType: 'OUT', rStatus: 'รอดำเนินการ' }, lsGet('labstock:ui:v1') || {});
-const saveUI = () => lsSet('labstock:ui:v1', { preset: ui.preset, cStart: ui.cStart, cEnd: ui.cEnd, formTab: ui.formTab });
+const ui = Object.assign({ preset: '30d', cStart: addDays(today(), -29), cEnd: today(), material: '', invFilter: 'all', search: '', formTab: 'stock', txType: 'OUT', rStatus: STATUSES[0], eqSearch: '', editId: '', eCat: CATEGORIES[0] }, lsGet(UI_KEY) || {});
+const saveUI = () => lsSet(UI_KEY, { preset: ui.preset, cStart: ui.cStart, cEnd: ui.cEnd, formTab: ui.formTab });
 
 function getRange() {
   const t = today();
   switch (ui.preset) {
     case 'today': return [t, t];
-    case '4d': return [addDays(t, -3), t];
+    case '7d': return [addDays(t, -6), t];
+    case '30d': return [addDays(t, -29), t];
     case '3m': return [addDays(addMonths(t, -3), 1), t];
     case '6m': return [addDays(addMonths(t, -6), 1), t];
-    case 'all': return [minDate(), maxDate()];
+    case '1y': return [addDays(addMonths(t, -12), 1), t];
+    case 'all': return [firstDay(), lastDay()];
     default: {
-      let a = isISO(ui.cStart) ? ui.cStart : t, b = isISO(ui.cEnd) ? ui.cEnd : t;
+      const a = isISO(ui.cStart) ? ui.cStart : t, b = isISO(ui.cEnd) ? ui.cEnd : t;
       return a <= b ? [a, b] : [b, a];
     }
   }
 }
 const rangeText = ([a, b]) => a === b ? fmtDate(a, { day: 'numeric', month: 'short', year: 'numeric' }) : `${fmtDate(a)} – ${fmtDate(b)}`;
 
-const VIEWS = ['dashboard', 'entry', 'stock', 'setup'];
+const VIEWS = ['dashboard', 'entry', 'stock', 'registry', 'setup'];
+const currentView = () => VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 function route() {
-  const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
+  const v = currentView();
   $$('[data-view]').forEach(s => s.hidden = s.dataset.view !== v);
   $$('.navbtn').forEach(b => {
     const on = b.dataset.go === v;
@@ -584,46 +652,48 @@ function route() {
   render();
   window.scrollTo(0, 0);
 }
-document.addEventListener('click', e => {
-  const go = e.target.closest('[data-go]');
-  if (go) { e.preventDefault(); location.hash = go.dataset.go; }
-});
 window.addEventListener('hashchange', route);
 
-/* ------------------------------------------------------------------ *
+/* ================================================================== *
  *  Rendering                                                          *
- * ------------------------------------------------------------------ */
+ * ================================================================== */
 const chip = (on, label, attrs) => `<button type="button" ${attrs} aria-pressed="${on}" class="h-11 shrink-0 whitespace-nowrap rounded-full border px-4 text-sm font-medium ${on ? 'border-accent bg-accent text-accentink' : 'border-line bg-card text-ink'}">${label}</button>`;
+const badge = (tone, text) => `<span class="inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold ${tone === 'danger' ? 'bg-dangerbg text-danger' : tone === 'warn' ? 'bg-warnbg text-warn' : tone === 'ok' ? 'bg-okbg text-in' : 'bg-soft text-muted'}">${text}</span>`;
 
-function expBadge(m) {
-  if (!m || !m.exp) return '<span class="text-muted">–</span>';
-  const d = m.expDays, date = fmtDate(m.exp);
-  if (d < 0) return `<span class="inline-flex flex-wrap items-center gap-1 rounded-lg bg-dangerbg px-2 py-0.5 font-semibold text-danger">${date} · หมดอายุแล้ว</span>`;
-  if (d <= ALERT_DAYS) return `<span class="inline-flex flex-wrap items-center gap-1 rounded-lg bg-dangerbg px-2 py-0.5 font-semibold text-danger">${date} · อีก ${d} วัน</span>`;
-  if (d <= 90) return `<span class="inline-flex flex-wrap items-center gap-1 rounded-lg bg-warnbg px-2 py-0.5 font-semibold text-warn">${date} · อีก ${d} วัน</span>`;
-  return `<span>${date}</span>`;
+function expBadge(m, a) {
+  if (a.expDays === null) return '<span class="text-muted">–</span>';
+  const d = a.expDays, date = fmtDate(m.Expiration_Date);
+  if (d < 0) return badge('danger', `${date} · หมดอายุแล้ว`);
+  if (d <= ALERT_DAYS) return badge('danger', `${date} · อีก ${d} วัน`);
+  if (d <= 90) return badge('warn', `${date} · อีก ${d} วัน`);
+  return `<span class="text-sm">${date}</span>`;
 }
-function maintBadge(m) {
-  if (!m || !m.maint) return '<span class="text-muted">–</span>';
-  const d = m.maintDays, date = fmtDate(m.maint);
-  if (d < 0) return `<span class="inline-flex rounded-lg bg-dangerbg px-2 py-0.5 font-semibold text-danger">${date} · เลยกำหนด ${-d} วัน</span>`;
-  if (d <= ALERT_DAYS) return `<span class="inline-flex rounded-lg bg-warnbg px-2 py-0.5 font-semibold text-warn">${date} · อีก ${d} วัน</span>`;
-  return `<span>${date}</span>`;
+function maintBadge(m, a) {
+  if (a.maintDays === null) return '<span class="text-muted">–</span>';
+  const d = a.maintDays, date = fmtDate(m.Next_Maintenance_Date);
+  if (d < 0) return badge('danger', `${date} · เลยกำหนด ${-d} วัน`);
+  if (d <= ALERT_DAYS) return badge('warn', `${date} · อีก ${d} วัน`);
+  return `<span class="text-sm">${date}</span>`;
 }
 function statusPill(s) {
-  const cls = s === 'ซ่อมเสร็จแล้ว' ? 'bg-okbg text-in' : s === 'กำลังซ่อม' ? 'bg-soft text-accent' : 'bg-warnbg text-warn';
-  return `<span class="inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}">${esc(s)}</span>`;
+  return badge(s === 'ซ่อมเสร็จแล้ว' ? 'ok' : s === 'กำลังซ่อม' ? 'muted' : 'warn', esc(s));
+}
+function eqOptions(selected, filter, placeholder) {
+  const q = (filter || '').trim().toLowerCase();
+  const groups = CATEGORIES.map(cat => {
+    const items = state.master.filter(m => m.Category === cat && (!q || m.Material_Name.toLowerCase().includes(q) || m.Equipment_ID.toLowerCase().includes(q)))
+      .sort((a, b) => a.Material_Name.localeCompare(b.Material_Name, 'th'));
+    return items.length ? `<optgroup label="${cat}">${items.map(m => `<option value="${esc(m.Equipment_ID)}" ${m.Equipment_ID === selected ? 'selected' : ''}>${esc(m.Equipment_ID)} · ${esc(m.Material_Name)}</option>`).join('')}</optgroup>` : '';
+  }).join('');
+  return `<option value="">${placeholder || '— เลือกอุปกรณ์ / วัสดุ —'}</option>` + groups;
 }
 
 function render() {
   renderSync();
-  const v = location.hash.slice(1) || 'dashboard';
-  if (v === 'dashboard') renderDashboard();
-  else if (v === 'entry') renderEntry();
-  else if (v === 'stock') renderInventory();
-  else if (v === 'setup') renderSetup();
+  ({ dashboard: renderDashboard, entry: renderEntry, stock: renderStock, registry: renderRegistry, setup: renderSetup })[currentView()]();
 }
 
+/* ---------------- dashboard ---------------- */
 function renderDashboard() {
   $('#range-chips').innerHTML = PRESETS.map(p => chip(ui.preset === p.id, p.label, `data-preset="${p.id}"`)).join('');
   $('#custom-range').hidden = ui.preset !== 'custom';
@@ -631,21 +701,17 @@ function renderDashboard() {
   const range = getRange();
   $('#range-label').textContent = rangeText(range);
 
-  const mats = allMaterials();
-  if (ui.material && !mats.includes(ui.material)) ui.material = '';
-  $('#mat-filter').innerHTML = `<option value="">วัสดุทั้งหมด (${mats.length} รายการ)</option>` + mats.map(m => `<option ${m === ui.material ? 'selected' : ''} value="${esc(m)}">${esc(m)}</option>`).join('');
+  if (ui.material && !eqIndex().has(ui.material)) ui.material = '';
+  $('#mat-filter').innerHTML = eqOptions(ui.material, '', `ทุกรายการในทะเบียน (${state.master.length})`);
 
-  const agg = aggregate(range[0], range[1], ui.material);
-  const s = totals(agg);
-  const st = materialStatus();
-  let expN = 0, maintN = 0, alertN = 0, repairN = 0;
-  for (const [name, m] of st) {
-    if (ui.material && name !== ui.material) continue;
-    const exp = m.expAlert && m.onHand > 0, mt = m.maintAlert;
-    if (exp) expN++; if (mt) maintN++; if (exp || mt) alertN++;
-    repairN += m.openRepairs;
-  }
-  const unit = ui.material ? metaOf(ui.material).unit : 'หน่วย';
+  const bal = balances(range[0], range[1]);
+  const s = sumRows(ui.material ? [bal.get(ui.material)] : [...bal.values()]);
+  const unit = ui.material ? unitOf(ui.material) : 'หน่วยรวม';
+
+  const alerts = state.master.filter(m => !ui.material || m.Equipment_ID === ui.material).map(m => ({ m, a: alertOf(m, onHand(m.Equipment_ID)) }));
+  const nExp = alerts.filter(x => x.a.exp).length, nMaint = alerts.filter(x => x.a.maint).length, nLow = alerts.filter(x => x.a.low).length;
+  const nUrgent = alerts.filter(x => x.a.exp || x.a.maint).length;
+
   const card = (label, val, sub, tone) => `
     <div class="rounded-2xl border p-4 ${tone === 'accent' ? 'border-accent bg-accent text-accentink' : 'border-line bg-card'}">
       <p class="text-sm ${tone === 'accent' ? 'opacity-90' : 'text-muted'}">${label}</p>
@@ -653,26 +719,42 @@ function renderDashboard() {
       <p class="mt-2 text-xs ${tone === 'accent' ? 'opacity-90' : 'text-muted'}">${sub}</p>
     </div>`;
   $('#kpis').innerHTML =
-    card('ยอดยกมา', fmtNum(s.open), `คงเหลือก่อน ${fmtDate(range[0])} (${unit})`) +
-    card('รับเข้าทั้งหมด', '+' + fmtNum(s.inQ), `ในช่วงที่เลือก (${unit})`, 'in') +
-    card('เบิกออกทั้งหมด', '−' + fmtNum(s.outQ), `ในช่วงที่เลือก (${unit})`, 'out') +
-    card('คงเหลือปัจจุบัน', fmtNum(s.close), `ยกมา ${fmtNum(s.open)} + รับ ${fmtNum(s.inQ)} − เบิก ${fmtNum(s.outQ)}`, 'accent') +
-    `<button type="button" id="kpi-alert" class="col-span-2 rounded-2xl border p-4 text-left lg:col-span-1 ${alertN ? 'border-danger/40 bg-dangerbg' : 'border-line bg-card'}">
-      <p class="text-sm ${alertN ? 'text-danger' : 'text-muted'}">แจ้งเตือนเร่งด่วน</p>
-      <p class="num mt-1 text-3xl font-bold leading-none ${alertN ? 'text-danger' : ''}">${fmtNum(alertN)} <span class="text-base font-semibold">รายการ</span></p>
-      <p class="mt-2 text-xs ${alertN ? 'text-danger' : 'text-muted'}">ใกล้หมดอายุ ${expN} · ถึงกำหนดบำรุง ${maintN} (ภายใน ${ALERT_DAYS} วัน) · งานซ่อมค้าง ${repairN}</p>
+    card('ยอดยกมา', fmtNum(s.open), `IN − OUT ก่อน ${fmtDate(range[0])} (${unit})`) +
+    card('รับเข้าในช่วง', '+' + fmtNum(s.inQ), `ผลรวม IN ในช่วง (${unit})`, 'in') +
+    card('เบิกออกในช่วง', '−' + fmtNum(s.outQ), `ผลรวม OUT ในช่วง (${unit})`, 'out') +
+    card('คงเหลือปัจจุบัน', fmtNum(s.close), `${fmtNum(s.open)} + ${fmtNum(s.inQ)} − ${fmtNum(s.outQ)} ณ ${fmtDate(range[1])}`, 'accent') +
+    `<button type="button" data-go="stock" data-invf-go="alert" class="col-span-2 rounded-2xl border p-4 text-left lg:col-span-1 ${nUrgent ? 'border-danger/40 bg-dangerbg' : 'border-line bg-card'}">
+      <p class="text-sm ${nUrgent ? 'text-danger' : 'text-muted'}">แจ้งเตือนเร่งด่วน</p>
+      <p class="num mt-1 text-3xl font-bold leading-none ${nUrgent ? 'text-danger' : ''}">${fmtNum(nUrgent)} <span class="text-base font-semibold">รายการ</span></p>
+      <p class="mt-2 text-xs ${nUrgent ? 'text-danger' : 'text-muted'}">หมดอายุใน ${ALERT_DAYS} วัน ${nExp} · ถึงกำหนดบำรุง ${nMaint} · และต่ำกว่าจุดเตือนอีก ${nLow}</p>
     </button>`;
 
-  renderCharts(range, agg);
+  const before = state.tx.filter(t => dayOf(t) < range[0]).length;
+  const inRange = state.tx.filter(t => dayOf(t) >= range[0] && dayOf(t) <= range[1]).length;
+  $('#calc-note').innerHTML = `คำนวณสดจาก Transactions ทั้งหมด <b class="num text-ink">${fmtNum(state.tx.length)}</b> แถว (${fmtDate(firstDay())} – ${fmtDate(lastDay())}): ยอดยกมามาจาก <b class="num text-ink">${fmtNum(before)}</b> แถวก่อนวันเริ่มต้น และอยู่ในช่วงนี้ <b class="num text-ink">${fmtNum(inRange)}</b> แถว ไม่มีการลบข้อมูลเก่า`;
 
-  const recent = state.tx.filter(t => t.date >= range[0] && t.date <= range[1] && t.qty > 0 && (!ui.material || t.material === ui.material))
-    .sort((a, b) => (b.date + b.timestamp).localeCompare(a.date + a.timestamp)).slice(0, 6);
+  const act = alerts.filter(x => x.a.any).sort((p, q) => ((p.a.exp || p.a.maint) ? 0 : 1) - ((q.a.exp || q.a.maint) ? 0 : 1));
+  $('#alert-list').innerHTML = act.length ? act.map(({ m, a }) => {
+    const tags = [];
+    if (a.exp) tags.push(badge('danger', a.expDays < 0 ? `หมดอายุแล้ว ${-a.expDays} วัน` : `หมดอายุในอีก ${a.expDays} วัน`));
+    if (a.maint) tags.push(badge(a.maintDays < 0 ? 'danger' : 'warn', a.maintDays < 0 ? `เลยกำหนดบำรุง ${-a.maintDays} วัน` : `ถึงกำหนดบำรุงใน ${a.maintDays} วัน`));
+    if (a.low) tags.push(badge('warn', `คงเหลือ ${fmtNum(onHand(m.Equipment_ID))} ≤ จุดเตือน ${fmtNum(m.Min_Stock_Alert)}`));
+    return `<li><button type="button" data-detail="${esc(m.Equipment_ID)}" class="flex w-full items-start gap-3 py-3 text-left">
+      <span class="mt-0.5 font-mono text-xs text-muted">${esc(m.Equipment_ID)}</span>
+      <span class="min-w-0 flex-1"><span class="block text-sm font-medium">${esc(m.Material_Name)}</span><span class="mt-1 flex flex-wrap gap-1">${tags.join('')}</span></span>
+    </button></li>`;
+  }).join('') : '<li class="py-6 text-center text-sm text-muted">ไม่มีรายการที่ต้องดำเนินการ</li>';
+
+  renderCharts(range, bal);
+
+  const recent = state.tx.filter(t => dayOf(t) >= range[0] && dayOf(t) <= range[1] && (!ui.material || t.Equipment_ID === ui.material))
+    .sort((a, b) => b.Timestamp.localeCompare(a.Timestamp)).slice(0, 6);
   $('#recent').innerHTML = recent.length ? recent.map(t => `
     <li class="flex items-center gap-3 py-3">
-      <span class="num flex h-10 w-12 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${t.type === 'OUT' ? 'bg-dangerbg text-out' : 'bg-okbg text-in'}">${t.type === 'OUT' ? '−' : '+'}${fmtNum(t.qty)}</span>
+      <span class="num flex h-10 w-12 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${t.Type === 'OUT' ? 'bg-dangerbg text-out' : 'bg-okbg text-in'}">${t.Type === 'OUT' ? '−' : '+'}${fmtNum(t.Quantity)}</span>
       <div class="min-w-0 flex-1">
-        <p class="truncate text-sm font-medium">${esc(t.material)}</p>
-        <p class="truncate text-xs text-muted">${fmtDate(t.date)} · ${esc(t.person)}${t._pending ? ' · <span class="text-warn">รอส่งเข้าชีต</span>' : ''}</p>
+        <p class="truncate text-sm font-medium">${esc(nameOf(t.Equipment_ID))}</p>
+        <p class="truncate text-xs text-muted">${fmtDate(dayOf(t))} ${t.Timestamp.slice(11, 16)} · ${esc(t.Requester)}${t._pending ? ' · <span class="text-warn">รอส่งเข้าชีต</span>' : ''}</p>
       </div>
     </li>`).join('') : '<li class="py-6 text-center text-sm text-muted">ไม่มีรายการในช่วงนี้</li>';
 }
@@ -697,130 +779,165 @@ function buckets([start, end]) {
   }
   return { mode: 'รายเดือน', list: out };
 }
-function renderCharts(range, agg) {
+function renderCharts(range, bal) {
   if (!window.Chart) return;
   const b = buckets(range);
   $('#bucket-label').textContent = b.mode;
   const ins = b.list.map(() => 0), outs = b.list.map(() => 0);
   for (const t of state.tx) {
-    if (t.date < range[0] || t.date > range[1]) continue;
-    if (ui.material && t.material !== ui.material) continue;
-    const i = b.list.findIndex(k => t.date >= k.from && t.date <= k.to);
+    const d = dayOf(t);
+    if (d < range[0] || d > range[1] || (ui.material && t.Equipment_ID !== ui.material)) continue;
+    const i = b.list.findIndex(k => d >= k.from && d <= k.to);
     if (i < 0) continue;
-    if (t.type === 'OUT') outs[i] += Number(t.qty) || 0; else ins[i] += Number(t.qty) || 0;
+    (t.Type === 'OUT' ? outs : ins)[i] += Number(t.Quantity) || 0;
   }
-  const ink = cssRGB('--muted'), grid = cssRGB('--line');
+  const grid = cssRGB('--line');
   Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
-  Chart.defaults.color = ink;
-  const flowData = {
-    labels: b.list.map(k => k.label),
-    datasets: [
-      { label: 'รับเข้า', data: ins, backgroundColor: cssRGB('--in', .85), borderRadius: 4, maxBarThickness: 22 },
-      { label: 'เบิกออก', data: outs, backgroundColor: cssRGB('--out', .85), borderRadius: 4, maxBarThickness: 22 },
-    ],
-  };
+  Chart.defaults.color = cssRGB('--muted');
   const common = { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, boxHeight: 12 } } } };
   if (flowChart) flowChart.destroy();
   flowChart = new Chart($('#chart-flow'), {
-    type: 'bar', data: flowData,
+    type: 'bar',
+    data: { labels: b.list.map(k => k.label), datasets: [
+      { label: 'รับเข้า (IN)', data: ins, backgroundColor: cssRGB('--in', .85), borderRadius: 4, maxBarThickness: 22 },
+      { label: 'เบิกออก (OUT)', data: outs, backgroundColor: cssRGB('--out', .85), borderRadius: 4, maxBarThickness: 22 },
+    ] },
     options: Object.assign({}, common, {
-      scales: {
-        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
-        y: { beginAtZero: true, grid: { color: grid }, ticks: { precision: 0 } },
-      },
+      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } }, y: { beginAtZero: true, grid: { color: grid }, ticks: { precision: 0 } } },
       interaction: { mode: 'index', intersect: false },
     }),
   });
 
-  const top = [...agg.values()].filter(r => r.outQ > 0).sort((a, b) => b.outQ - a.outQ).slice(0, 5);
+  const top = [...bal.entries()].filter(([id, r]) => r.outQ > 0 && (!ui.material || id === ui.material)).sort((a, b) => b[1].outQ - a[1].outQ).slice(0, 5);
   $('#top-empty').hidden = top.length > 0;
   $('#chart-top').parentElement.hidden = top.length === 0;
   if (topChart) topChart.destroy();
-  if (top.length) {
-    const short = s => s.length > 26 ? s.slice(0, 25) + '…' : s;
-    topChart = new Chart($('#chart-top'), {
-      type: 'bar',
-      data: { labels: top.map(r => short(r.name)), datasets: [{ label: 'เบิกออก', data: top.map(r => r.outQ), backgroundColor: cssRGB('--out', .85), borderRadius: 4, maxBarThickness: 26 }] },
-      options: Object.assign({}, common, {
-        indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { title: items => top[items[0].dataIndex].name } } },
-        scales: { x: { beginAtZero: true, grid: { color: grid }, ticks: { precision: 0 } }, y: { grid: { display: false }, ticks: { font: { size: 11 } } } },
-      }),
-    });
-  }
-}
-
-function inventoryRows() {
-  const range = getRange(), agg = aggregate(range[0], range[1]), st = materialStatus();
-  const q = ui.search.trim().toLowerCase();
-  return allMaterials().map(name => {
-    const a = agg.get(name) || { open: 0, inQ: 0, outQ: 0, close: 0 };
-    const m = st.get(name) || { repairs: [], openRepairs: 0, onHand: 0 };
-    return Object.assign({ name, meta: metaOf(name), m }, a, { close: a.open + a.inQ - a.outQ });
-  }).filter(r => {
-    if (q && !r.name.toLowerCase().includes(q)) return false;
-    const exp = r.m.expAlert && r.m.onHand > 0, mt = r.m.maintAlert;
-    switch (ui.invFilter) {
-      case 'alert': return exp || mt;
-      case 'exp': return exp;
-      case 'maint': return mt;
-      case 'repair': return r.m.openRepairs > 0;
-      case 'moved': return r.inQ > 0 || r.outQ > 0;
-      default: return true;
-    }
-  }).sort((a, b) => {
-    const w = r => (r.m.expAlert && r.m.onHand > 0) || r.m.maintAlert ? 0 : 1;
-    return w(a) - w(b) || a.name.localeCompare(b.name, 'th');
+  if (!top.length) return;
+  const short = s => s.length > 26 ? s.slice(0, 25) + '…' : s;
+  topChart = new Chart($('#chart-top'), {
+    type: 'bar',
+    data: { labels: top.map(([id]) => short(nameOf(id))), datasets: [{ label: 'เบิกออก', data: top.map(([, r]) => r.outQ), backgroundColor: cssRGB('--out', .85), borderRadius: 4, maxBarThickness: 26 }] },
+    options: Object.assign({}, common, {
+      indexAxis: 'y',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { title: items => `${top[items[0].dataIndex][0]} · ${nameOf(top[items[0].dataIndex][0])}` } } },
+      scales: { x: { beginAtZero: true, grid: { color: grid }, ticks: { precision: 0 } }, y: { grid: { display: false }, ticks: { font: { size: 11 } } } },
+    }),
   });
 }
-function repairHistory(m) {
-  if (!m.repairs.length) return '<span class="text-muted">ไม่มี</span>';
-  return `<details class="group"><summary class="cursor-pointer list-none font-medium text-accent">${m.repairs.length} ครั้ง${m.openRepairs ? ` · <span class="text-warn">ค้าง ${m.openRepairs}</span>` : ''} <span class="text-xs group-open:hidden">(ดู)</span></summary>
-    <ul class="mt-2 space-y-2">${m.repairs.map(r => `<li class="rounded-lg bg-soft p-2 text-xs"><div class="mb-1 flex flex-wrap items-center gap-2"><span class="font-semibold">${fmtDate(r.date)}</span>${statusPill(r.status)}</div><p>${esc(r.issue)}</p><p class="text-muted">แจ้งโดย ${esc(r.reporter)}</p></li>`).join('')}</ul></details>`;
+
+/* ---------------- stock view (computed balances) ---------------- */
+function stockRows() {
+  const range = getRange(), bal = balances(range[0], range[1]);
+  const q = ui.search.trim().toLowerCase();
+  return state.master.map(m => {
+    const a = alertOf(m, onHand(m.Equipment_ID));
+    return Object.assign({ m, a, rep: state.repairs.filter(x => x.Equipment_ID === m.Equipment_ID), openRep: openRepairs(m.Equipment_ID) }, bal.get(m.Equipment_ID));
+  }).filter(r => {
+    if (q && !r.m.Material_Name.toLowerCase().includes(q) && !r.m.Equipment_ID.toLowerCase().includes(q)) return false;
+    switch (ui.invFilter) {
+      case 'all': return true;
+      case 'alert': return r.a.any;
+      case 'exp': return r.a.exp;
+      case 'maint': return r.a.maint;
+      case 'low': return r.a.low;
+      default: return r.m.Category === ui.invFilter;
+    }
+  }).sort((x, y) => (x.a.any ? 0 : 1) - (y.a.any ? 0 : 1) || x.m.Equipment_ID.localeCompare(y.m.Equipment_ID));
 }
-function renderInventory() {
+function renderStock() {
   $('#inv-chips').innerHTML = INV_FILTERS.map(f => chip(ui.invFilter === f.id, f.label, `data-invf="${f.id}"`)).join('');
   $('#inv-range').textContent = rangeText(getRange());
   if ($('#inv-search').value !== ui.search) $('#inv-search').value = ui.search;
-  const rows = inventoryRows();
+  const rows = stockRows();
   $('#inv-count').textContent = `${rows.length} รายการ`;
   const empty = '<p class="py-10 text-center text-sm text-muted">ไม่พบรายการที่ตรงกับเงื่อนไข</p>';
+  const repText = r => r.rep.length ? `${r.rep.length} ครั้ง${r.openRep ? ` · <span class="text-warn">ค้าง ${r.openRep}</span>` : ''}` : '<span class="text-muted">ไม่มี</span>';
   $('#inv-cards').innerHTML = rows.length ? rows.map(r => `
-    <li class="rounded-2xl border border-line bg-card p-4">
+    <li><button type="button" data-detail="${esc(r.m.Equipment_ID)}" class="w-full rounded-2xl border ${r.a.any ? 'border-danger/40' : 'border-line'} bg-card p-4 text-left">
       <div class="flex items-start justify-between gap-2">
-        <div class="min-w-0"><p class="font-semibold leading-snug">${esc(r.name)}</p><p class="text-xs text-muted">${esc(r.meta.cat)}${r.meta.unit ? ' · หน่วย: ' + esc(r.meta.unit) : ''}</p></div>
-        <p class="num shrink-0 text-right"><span class="block text-2xl font-bold leading-none">${fmtNum(r.close)}</span><span class="text-xs text-muted">คงเหลือสุทธิ</span></p>
+        <div class="min-w-0"><p class="font-mono text-xs text-muted">${esc(r.m.Equipment_ID)} · ${esc(r.m.Category)}</p><p class="font-semibold leading-snug">${esc(r.m.Material_Name)}</p></div>
+        <p class="num shrink-0 text-right"><span class="block text-2xl font-bold leading-none ${r.a.low ? 'text-warn' : ''}">${fmtNum(r.close)}</span><span class="text-xs text-muted">${esc(r.m.Unit)}</span></p>
       </div>
       <dl class="num mt-3 grid grid-cols-3 gap-2 text-center text-sm">
         <div class="rounded-xl bg-soft py-2"><dt class="text-xs text-muted">ยอดยกมา</dt><dd class="font-semibold">${fmtNum(r.open)}</dd></div>
-        <div class="rounded-xl bg-okbg py-2"><dt class="text-xs text-muted">รับเข้า (+)</dt><dd class="font-semibold text-in">${fmtNum(r.inQ)}</dd></div>
-        <div class="rounded-xl bg-dangerbg py-2"><dt class="text-xs text-muted">เบิกออก (−)</dt><dd class="font-semibold text-out">${fmtNum(r.outQ)}</dd></div>
+        <div class="rounded-xl bg-okbg py-2"><dt class="text-xs text-muted">รับเข้า</dt><dd class="font-semibold text-in">+${fmtNum(r.inQ)}</dd></div>
+        <div class="rounded-xl bg-dangerbg py-2"><dt class="text-xs text-muted">เบิกออก</dt><dd class="font-semibold text-out">−${fmtNum(r.outQ)}</dd></div>
       </dl>
-      <dl class="mt-3 space-y-2 text-sm">
-        <div class="flex flex-wrap items-center justify-between gap-2"><dt class="text-muted">วันหมดอายุ</dt><dd>${expBadge(r.m)}</dd></div>
-        <div class="flex flex-wrap items-center justify-between gap-2"><dt class="text-muted">วันบำรุงรักษา</dt><dd>${maintBadge(r.m)}</dd></div>
-        <div><dt class="sr-only">ประวัติแจ้งซ่อม</dt><dd class="flex flex-wrap items-start justify-between gap-2"><span class="text-muted">ประวัติแจ้งซ่อม</span><div class="min-w-0 text-right">${repairHistory(r.m)}</div></dd></div>
+      <dl class="mt-3 space-y-1.5 text-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2"><dt class="text-muted">จุดเตือนขั้นต่ำ</dt><dd class="num">${fmtNum(r.m.Min_Stock_Alert)} ${r.a.low ? badge('warn', 'ต่ำกว่าจุดเตือน') : ''}</dd></div>
+        <div class="flex flex-wrap items-center justify-between gap-2"><dt class="text-muted">วันหมดอายุ</dt><dd>${expBadge(r.m, r.a)}</dd></div>
+        <div class="flex flex-wrap items-center justify-between gap-2"><dt class="text-muted">บำรุงรักษา</dt><dd>${maintBadge(r.m, r.a)}</dd></div>
+        <div class="flex flex-wrap items-center justify-between gap-2"><dt class="text-muted">แจ้งซ่อม</dt><dd>${repText(r)}</dd></div>
       </dl>
-    </li>`).join('') : empty;
+    </button></li>`).join('') : empty;
   $('#inv-table').innerHTML = rows.length ? rows.map(r => `
-    <tr class="align-top">
-      <td class="px-3 py-3"><p class="font-medium">${esc(r.name)}</p><p class="text-xs text-muted">${esc(r.meta.cat)}${r.meta.unit ? ' · ' + esc(r.meta.unit) : ''}</p></td>
+    <tr class="cursor-pointer align-top hover:bg-soft/60" data-detail="${esc(r.m.Equipment_ID)}">
+      <td class="px-3 py-3"><p class="font-mono text-xs text-muted">${esc(r.m.Equipment_ID)}</p><p class="font-medium">${esc(r.m.Material_Name)}</p><p class="text-xs text-muted">${esc(r.m.Category)} · ${esc(r.m.Unit)}</p></td>
       <td class="num px-3 py-3 text-right">${fmtNum(r.open)}</td>
-      <td class="num px-3 py-3 text-right text-in">${fmtNum(r.inQ)}</td>
-      <td class="num px-3 py-3 text-right text-out">${fmtNum(r.outQ)}</td>
-      <td class="num px-3 py-3 text-right text-base font-bold">${fmtNum(r.close)}</td>
-      <td class="px-3 py-3">${expBadge(r.m)}</td>
-      <td class="px-3 py-3">${maintBadge(r.m)}</td>
-      <td class="px-3 py-3 min-w-[180px]">${repairHistory(r.m)}</td>
-    </tr>`).join('') : `<tr><td colspan="8">${empty}</td></tr>`;
+      <td class="num px-3 py-3 text-right text-in">+${fmtNum(r.inQ)}</td>
+      <td class="num px-3 py-3 text-right text-out">−${fmtNum(r.outQ)}</td>
+      <td class="num px-3 py-3 text-right text-base font-bold ${r.a.low ? 'text-warn' : ''}">${fmtNum(r.close)}</td>
+      <td class="num px-3 py-3 text-right">${fmtNum(r.m.Min_Stock_Alert)}</td>
+      <td class="px-3 py-3">${expBadge(r.m, r.a)}</td>
+      <td class="px-3 py-3">${maintBadge(r.m, r.a)}</td>
+      <td class="px-3 py-3 whitespace-nowrap">${repText(r)}</td>
+    </tr>`).join('') : `<tr><td colspan="9">${empty}</td></tr>`;
 }
 
-function balanceOf(name) { return state.tx.reduce((s, t) => t.material === name ? s + (t.type === 'OUT' ? -1 : 1) * (Number(t.qty) || 0) : s, 0); }
+/* ---------------- item ledger ---------------- */
+function openDetail(id) {
+  const m = eqIndex().get(id);
+  if (!m) return;
+  const range = getRange(), r = balances(range[0], range[1]).get(id), a = alertOf(m, onHand(id));
+  const lines = state.tx.filter(t => t.Equipment_ID === id && dayOf(t) >= range[0] && dayOf(t) <= range[1]).sort((x, y) => x.Timestamp.localeCompare(y.Timestamp));
+  const priorCount = state.tx.filter(t => t.Equipment_ID === id && dayOf(t) < range[0]).length;
+  let run = r.open;
+  $('#detail-id').textContent = `${m.Equipment_ID} · ${m.Category} · หน่วย ${m.Unit}`;
+  $('#detail-title').textContent = m.Material_Name;
+  const reps = state.repairs.filter(x => x.Equipment_ID === id).sort((x, y) => y.Timestamp.localeCompare(x.Timestamp));
+  $('#detail-body').innerHTML = `
+    <dl class="grid grid-cols-2 gap-2 text-sm">
+      <div class="rounded-xl bg-soft p-3"><dt class="text-muted">วันหมดอายุ</dt><dd class="mt-1">${expBadge(m, a)}</dd></div>
+      <div class="rounded-xl bg-soft p-3"><dt class="text-muted">บำรุงรักษาครั้งถัดไป</dt><dd class="mt-1">${maintBadge(m, a)}</dd></div>
+      <div class="rounded-xl bg-soft p-3"><dt class="text-muted">คงเหลือวันนี้</dt><dd class="num mt-1 font-semibold">${fmtNum(onHand(id))} ${esc(m.Unit)}</dd></div>
+      <div class="rounded-xl bg-soft p-3"><dt class="text-muted">จุดเตือนขั้นต่ำ</dt><dd class="num mt-1 font-semibold">${fmtNum(m.Min_Stock_Alert)} ${a.low ? badge('warn', 'ต่ำกว่าจุดเตือน') : ''}</dd></div>
+    </dl>
+    <div class="grid grid-cols-3 gap-2">
+      <button type="button" data-quick="${esc(id)}" data-type="IN" class="h-11 rounded-xl border-2 border-in px-2 text-sm font-semibold text-in">+ รับเข้า</button>
+      <button type="button" data-quick="${esc(id)}" data-type="OUT" class="h-11 rounded-xl border-2 border-out px-2 text-sm font-semibold text-out">− เบิกออก</button>
+      <button type="button" data-edit-eq="${esc(id)}" class="h-11 rounded-xl border border-line px-2 text-sm font-semibold">แก้ไขทะเบียน</button>
+    </div>
+    <div>
+      <h3 class="mb-1 font-semibold">บัญชีคุมยอด ${esc(rangeText(range))}</h3>
+      <p class="mb-2 text-xs text-muted">ยอดยกมาคำนวณจาก ${fmtNum(priorCount)} รายการก่อน ${fmtDate(range[0])}</p>
+      <div class="overflow-x-auto rounded-xl border border-line">
+        <table class="num w-full text-sm">
+          <thead class="bg-soft text-xs text-muted"><tr><th class="px-3 py-2 text-left">วันที่ / ผู้บันทึก</th><th class="px-3 py-2 text-right">IN</th><th class="px-3 py-2 text-right">OUT</th><th class="px-3 py-2 text-right">คงเหลือ</th></tr></thead>
+          <tbody class="divide-y divide-line">
+            <tr class="bg-soft/50"><td class="px-3 py-2 font-medium">ยอดยกมา</td><td></td><td></td><td class="px-3 py-2 text-right font-semibold">${fmtNum(r.open)}</td></tr>
+            ${lines.map(t => { run += (t.Type === 'OUT' ? -1 : 1) * Number(t.Quantity); return `<tr>
+              <td class="px-3 py-2"><span class="block">${fmtDate(dayOf(t))} ${t.Timestamp.slice(11, 16)}</span><span class="block text-xs text-muted">${esc(t.Requester)}${t.Notes ? ' · ' + esc(t.Notes) : ''}</span></td>
+              <td class="px-3 py-2 text-right text-in">${t.Type === 'IN' ? '+' + fmtNum(t.Quantity) : ''}</td>
+              <td class="px-3 py-2 text-right text-out">${t.Type === 'OUT' ? '−' + fmtNum(t.Quantity) : ''}</td>
+              <td class="px-3 py-2 text-right">${fmtNum(run)}</td></tr>`; }).join('')}
+            <tr class="bg-soft/50 font-semibold"><td class="px-3 py-2">คงเหลือ ณ ${fmtDate(range[1])}</td><td class="px-3 py-2 text-right text-in">+${fmtNum(r.inQ)}</td><td class="px-3 py-2 text-right text-out">−${fmtNum(r.outQ)}</td><td class="px-3 py-2 text-right" data-ledger-close="${run}">${fmtNum(run)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h3 class="mb-2 font-semibold">ประวัติแจ้งซ่อม (${reps.length})</h3>
+      ${reps.length ? `<ul class="space-y-2">${reps.map(x => `<li class="rounded-xl bg-soft p-3 text-sm"><div class="mb-1 flex flex-wrap items-center gap-2"><span class="font-semibold">${fmtDate(dayOf(x))}</span>${statusPill(x.Status)}<span class="font-mono text-xs text-muted">${esc(x.Repair_ID)}</span></div><p>${esc(x.Issue_Description)}</p><p class="text-xs text-muted">แจ้งโดย ${esc(x.Reporter)}</p></li>`).join('')}</ul>` : '<p class="text-sm text-muted">ไม่มี</p>'}
+    </div>`;
+  $('#detail').hidden = false;
+  document.body.style.overflow = 'hidden';
+  $('#detail-close').focus();
+}
+function closeDetail() { $('#detail').hidden = true; document.body.style.overflow = ''; }
+
+/* ---------------- entry forms ---------------- */
 function renderEntry() {
-  const mats = allMaterials();
-  $('#dl-materials').innerHTML = mats.map(m => `<option value="${esc(m)}"></option>`).join('');
-  const eqNames = [...new Set(CATALOG.filter(c => c.kind === 'e').map(c => c.name).concat(state.repairs.map(r => r.equipment), mats))];
-  $('#dl-equipment').innerHTML = eqNames.map(m => `<option value="${esc(m)}"></option>`).join('');
-  const people = [...new Set(state.tx.map(t => t.person).concat(state.repairs.map(r => r.reporter)).filter(Boolean))];
+  const people = [...new Set(state.tx.map(t => t.Requester).concat(state.repairs.map(r => r.Reporter)).filter(Boolean))];
   $('#dl-people').innerHTML = people.map(p => `<option value="${esc(p)}"></option>`).join('');
   if (!$('#f-date').value) $('#f-date').value = today();
   if (!$('#r-date').value) $('#r-date').value = today();
@@ -834,47 +951,98 @@ function renderEntry() {
   $('#form-repair').hidden = ui.formTab !== 'repair';
   $('#repair-list-wrap').hidden = ui.formTab !== 'repair';
 
+  const keep = ui.preselect || $('#f-eq').value;
+  $('#f-eq').innerHTML = eqOptions(keep, ui.preselect ? '' : $('#f-eq-q').value);
+  $('#r-eq').innerHTML = eqOptions($('#r-eq').value);
+  ui.preselect = '';
+
   $$('[data-txtype]').forEach(b => {
     const on = b.dataset.txtype === ui.txType, isIn = b.dataset.txtype === 'IN';
     b.className = `h-14 rounded-xl border-2 text-base font-semibold ${on ? (isIn ? 'border-in bg-okbg text-in' : 'border-out bg-dangerbg text-out') : 'border-line text-muted'}`;
     b.setAttribute('aria-pressed', on);
   });
-  updateBalanceHint();
+  updateEqCard();
 
   $('#r-status-group').innerHTML = STATUSES.map(s => `<button type="button" data-rstatus="${s}" aria-pressed="${s === ui.rStatus}" class="h-12 rounded-xl border-2 px-1 text-sm font-semibold ${s === ui.rStatus ? 'border-accent bg-soft text-accent' : 'border-line text-muted'}">${s}</button>`).join('');
 
-  const list = [...state.repairs].sort((a, b) => (b.date + b.timestamp).localeCompare(a.date + a.timestamp));
+  const list = [...state.repairs].sort((a, b) => b.Timestamp.localeCompare(a.Timestamp));
   $('#repair-list').innerHTML = list.length ? list.map(r => `
     <li class="space-y-2 py-3">
-      <div class="flex items-start justify-between gap-2"><p class="min-w-0 font-medium leading-snug">${esc(r.equipment)}</p>${statusPill(r.status)}</div>
-      <p class="text-sm">${esc(r.issue)}</p>
+      <div class="flex items-start justify-between gap-2"><p class="min-w-0 font-medium leading-snug"><span class="font-mono text-xs text-muted">${esc(r.Equipment_ID)}</span> ${esc(nameOf(r.Equipment_ID))}</p>${statusPill(r.Status)}</div>
+      <p class="text-sm">${esc(r.Issue_Description)}</p>
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="text-xs text-muted">${fmtDate(r.date)} · แจ้งโดย ${esc(r.reporter)}${r._pending || r._pendingStatus ? ' · <span class="text-warn">รอส่งเข้าชีต</span>' : ''}</p>
+        <p class="text-xs text-muted">${fmtDate(dayOf(r))} · แจ้งโดย ${esc(r.Reporter)}${r._pending || r._pendingStatus ? ' · <span class="text-warn">รอส่งเข้าชีต</span>' : ''}</p>
         <label class="flex items-center gap-2 text-sm"><span class="text-muted">สถานะ</span>
-          <select data-repair-id="${esc(r.id)}" class="h-11 rounded-xl border border-line bg-card px-2">${STATUSES.map(s => `<option ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+          <select data-repair-id="${esc(r.Repair_ID)}" class="h-11 rounded-xl border border-line bg-card px-2">${STATUSES.map(s => `<option ${s === r.Status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
       </div>
-    </li>`).join('') : '<li class="py-6 text-center text-sm text-muted">ยังไม่มีรายการแจ้งซ่อม</li>';
+    </li>`).join('') : '<li class="py-6 text-center text-sm text-muted">ยังไม่มีใบแจ้งซ่อม</li>';
 }
-function updateBalanceHint() {
-  const name = $('#f-material').value.trim();
-  const known = allMaterials().includes(name);
-  $('#f-unit').textContent = name && metaOf(name).unit ? `(${metaOf(name).unit})` : '';
-  $('#f-balance').innerHTML = !name ? 'เลือกจากรายการ หรือพิมพ์ชื่อใหม่เพื่อเพิ่มวัสดุ'
-    : known ? `คงเหลือปัจจุบัน: <b class="num text-ink">${fmtNum(balanceOf(name))}</b> ${esc(metaOf(name).unit)}`
-    : '<span class="text-accent">วัสดุใหม่: จะถูกเพิ่มเข้ารายการเมื่อบันทึก</span>';
+function updateEqCard() {
+  const id = $('#f-eq').value, m = eqIndex().get(id), box = $('#f-eq-card');
+  $('#f-unit').textContent = m ? `(${m.Unit})` : '';
+  if (!m) { box.hidden = true; return; }
+  const bal = onHand(id), a = alertOf(m, bal);
+  box.hidden = false;
+  box.innerHTML = `<div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+    <span>คงเหลือ <b class="num text-ink">${fmtNum(bal)}</b> ${esc(m.Unit)}</span>
+    <span class="text-muted">จุดเตือน ${fmtNum(m.Min_Stock_Alert)}</span>
+    ${a.low ? badge('warn', 'ต่ำกว่าจุดเตือน') : ''}${a.exp ? badge('danger', a.expDays < 0 ? 'หมดอายุแล้ว' : `หมดอายุใน ${a.expDays} วัน`) : ''}${a.maint ? badge('warn', 'ถึงกำหนดบำรุง') : ''}</div>`;
 }
 
+/* ---------------- registry (Equipment_Master) ---------------- */
+function nextLocalId() {
+  const max = state.master.reduce((n, m) => { const k = /^EQ-(\d+)$/.exec(m.Equipment_ID); return k ? Math.max(n, +k[1]) : n; }, 0);
+  return 'EQ-' + String(max + 1).padStart(3, '0');
+}
+function renderRegistry() {
+  const editing = ui.editId && eqIndex().get(ui.editId);
+  $('#eq-form-title').textContent = editing ? 'แก้ไขทะเบียนอุปกรณ์' : 'เพิ่มอุปกรณ์ใหม่';
+  $('#eq-form-id').textContent = editing ? ui.editId : (settings.url ? 'ระบบออกให้อัตโนมัติเมื่อบันทึก' : nextLocalId() + ' (อัตโนมัติ)');
+  $('#eq-submit').textContent = editing ? 'บันทึกการแก้ไข' : 'เพิ่มเข้าทะเบียน';
+  $('#eq-cancel').hidden = !editing;
+  $('#e-cat-group').innerHTML = CATEGORIES.map(c => `<button type="button" data-ecat="${c}" aria-pressed="${c === ui.eCat}" class="h-12 rounded-xl border-2 font-semibold ${c === ui.eCat ? 'border-accent bg-soft text-accent' : 'border-line text-muted'}">${c}</button>`).join('');
+  if ($('#eq-search').value !== ui.eqSearch) $('#eq-search').value = ui.eqSearch;
+  const q = ui.eqSearch.trim().toLowerCase();
+  const list = state.master.filter(m => !q || m.Material_Name.toLowerCase().includes(q) || m.Equipment_ID.toLowerCase().includes(q)).sort((a, b) => a.Equipment_ID.localeCompare(b.Equipment_ID));
+  $('#eq-count').textContent = `${state.master.length} รายการ`;
+  $('#eq-list').innerHTML = list.map(m => {
+    const a = alertOf(m, onHand(m.Equipment_ID));
+    return `<li class="flex items-center gap-3 py-3">
+      <button type="button" data-detail="${esc(m.Equipment_ID)}" class="min-w-0 flex-1 text-left">
+        <span class="font-mono text-xs text-muted">${esc(m.Equipment_ID)} · ${esc(m.Category)} · ${esc(m.Unit)}${m._pending ? ' · <span class="text-warn">รอส่งเข้าชีต</span>' : ''}</span>
+        <span class="block text-sm font-medium leading-snug">${esc(m.Material_Name)}</span>
+        <span class="mt-1 flex flex-wrap gap-1">${a.exp ? badge('danger', 'ใกล้/หมดอายุ') : ''}${a.maint ? badge('warn', 'ถึงกำหนดบำรุง') : ''}${a.low ? badge('warn', 'ต่ำกว่าจุดเตือน') : ''}</span>
+      </button>
+      <button type="button" data-edit-eq="${esc(m.Equipment_ID)}" class="h-11 shrink-0 rounded-xl border border-line px-3 text-sm font-semibold">แก้ไข</button>
+    </li>`;
+  }).join('') || '<li class="py-6 text-center text-sm text-muted">ไม่พบรายการ</li>';
+}
+function fillEqForm(m) {
+  $('#e-name').value = m ? m.Material_Name : '';
+  $('#e-unit').value = m ? m.Unit : '';
+  $('#e-min').value = m ? m.Min_Stock_Alert : 0;
+  $('#e-exp').value = m ? m.Expiration_Date : '';
+  $('#e-maint').value = m ? m.Next_Maintenance_Date : '';
+  ui.eCat = m ? m.Category : CATEGORIES[0];
+  $('#eq-error').hidden = true;
+}
+
+/* ---------------- setup ---------------- */
+function pendingCount() {
+  return state.master.filter(m => m._pending || m._pendingUpdate).length + state.tx.filter(t => t._pending).length + state.repairs.filter(r => r._pending || r._pendingStatus).length;
+}
 function renderSetup() {
   if (document.activeElement !== $('#s-url')) $('#s-url').value = settings.url;
   if (document.activeElement !== $('#s-key')) $('#s-key').value = settings.key;
   $('#s-source').textContent = state.source === 'sheet' ? 'Google Sheets' : 'ข้อมูลตัวอย่าง (ในเครื่อง)';
   $('#s-last').textContent = state.lastSync ? new Date(state.lastSync).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : 'ยังไม่เคย';
+  $('#s-n-master').textContent = fmtNum(state.master.length) + ' รายการ';
+  $('#s-n-tx').textContent = fmtNum(state.tx.length) + ' แถว';
   const n = pendingCount();
   $('#btn-sync').textContent = n ? `ส่งรายการค้าง (${n}) และดึงข้อมูลล่าสุด` : 'ดึงข้อมูลล่าสุดจาก Google Sheets';
   $('#btn-sync').disabled = !settings.url;
   $('#btn-sync').classList.toggle('opacity-50', !settings.url);
 }
-function pendingCount() { return state.tx.filter(t => t._pending).length + state.repairs.filter(r => r._pending || r._pendingStatus).length; }
 function renderSync() {
   const c = $('#sync-chip'), n = pendingCount();
   let text, cls;
@@ -890,107 +1058,173 @@ let toastTimer;
 function toast(msg, tone = 'ok') {
   const cls = tone === 'err' ? 'bg-danger text-white' : tone === 'warn' ? 'bg-warn text-white' : 'bg-ink text-bg';
   $('#toast').innerHTML = `<div role="status" class="toast-in pointer-events-auto max-w-md rounded-xl px-4 py-3 text-sm font-medium shadow-lg ${cls}">${esc(msg)}</div>`;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').innerHTML = '', 3500);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').innerHTML = '', 4000);
 }
 
-/* ------------------------------------------------------------------ *
+/* ================================================================== *
  *  Google Apps Script sync                                            *
- * ------------------------------------------------------------------ */
+ * ================================================================== */
 let syncing = false;
-async function api(payload) {
+async function api(payload, query) {
   if (!settings.url) throw new Error('ยังไม่ได้ตั้งค่า Web App URL');
   let res;
+  try {
   if (!payload) {
-    const u = settings.url + (settings.url.includes('?') ? '&' : '?') + 'action=list&key=' + encodeURIComponent(settings.key);
-    res = await fetch(u, { method: 'GET', redirect: 'follow' });
+    const qs = new URLSearchParams(Object.assign({ key: settings.key }, query)).toString();
+    res = await fetch(settings.url + (settings.url.includes('?') ? '&' : '?') + qs, { redirect: 'follow' });
   } else {
-    // text/plain avoids a CORS preflight, which Apps Script cannot answer
+    // text/plain keeps this a "simple" request: Apps Script cannot answer a CORS preflight
     res = await fetch(settings.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ key: settings.key }, payload)) });
   }
+  } catch (e) { throw new Error('ติดต่อเซิร์ฟเวอร์ไม่ได้ (ออฟไลน์?) จะส่งให้อัตโนมัติเมื่อซิงก์ครั้งถัดไป'); }
   let j;
   try { j = await res.json(); } catch (e) { throw new Error('เซิร์ฟเวอร์ไม่ได้ตอบกลับเป็น JSON ตรวจสอบว่า Deploy เป็น Web App และให้ "ทุกคน" เข้าถึงได้'); }
   if (!j.ok) throw new Error(j.error || 'เซิร์ฟเวอร์ตอบกลับข้อผิดพลาด');
   return j;
 }
 const clean = o => Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith('_')));
+
+/** Replace a temporary Equipment_ID with the one the server issued, everywhere it is used. */
+function remapId(from, to) {
+  if (from === to) return;
+  // server matched an existing item by name: drop our temporary copy
+  if (state.master.some(m => m.Equipment_ID === to && !m._pending)) state.master = state.master.filter(m => m.Equipment_ID !== from);
+  state.master.forEach(m => { if (m.Equipment_ID === from) m.Equipment_ID = to; });
+  state.tx.forEach(t => { if (t.Equipment_ID === from) t.Equipment_ID = to; });
+  state.repairs.forEach(r => { if (r.Equipment_ID === from) r.Equipment_ID = to; });
+  if (ui.material === from) ui.material = to;
+  if (ui.editId === from) ui.editId = to;
+}
+async function sendEquipment(m) {
+  const j = await api({ action: 'addEquipment', data: clean(m) });
+  delete m._pending; delete m._pendingUpdate;
+  remapId(m.Equipment_ID, j.id);
+  save();
+}
+/** Order matters: new equipment first (so its server ID exists), then edits, movements, tickets, status changes. */
 async function pushPending() {
+  for (const m of state.master.filter(m => m._pending)) await sendEquipment(m);
+  for (const m of state.master.filter(m => m._pendingUpdate)) { await api({ action: 'updateEquipment', data: clean(m) }); delete m._pendingUpdate; save(); }
   for (const t of state.tx.filter(t => t._pending)) { await api({ action: 'addTx', data: clean(t) }); delete t._pending; save(); }
   for (const r of state.repairs.filter(r => r._pending)) { await api({ action: 'addRepair', data: clean(r) }); delete r._pending; delete r._pendingStatus; save(); }
-  for (const r of state.repairs.filter(r => r._pendingStatus)) { await api({ action: 'updateRepair', data: { id: r.id, status: r.status, updatedAt: r.updatedAt } }); delete r._pendingStatus; save(); }
+  for (const r of state.repairs.filter(r => r._pendingStatus)) { await api({ action: 'updateRepair', data: { Repair_ID: r.Repair_ID, Status: r.Status } }); delete r._pendingStatus; save(); }
 }
+/** Pull: master + repairs in full; Transactions only after the rows already held (the log is append-only). */
 async function syncAll({ quiet } = {}) {
-  if (!settings.url || syncing) return;
+  if (!settings.url || syncing) return false;
   syncing = true; renderSync();
+  let ok = false;
   try {
     await pushPending();
-    const j = await api(null);
-    const localTx = state.tx.filter(t => t._pending), localRp = state.repairs.filter(r => r._pending || r._pendingStatus);
-    state.tx = j.tx.concat(localTx.filter(t => !j.tx.some(s => s.id === t.id)));
-    state.repairs = j.repairs.map(r => localRp.find(l => l.id === r.id) || r).concat(localRp.filter(l => !j.repairs.some(s => s.id === l.id)));
-    state.source = 'sheet'; state.lastSync = new Date().toISOString();
-    save();
-    if (!quiet) toast(`ซิงก์สำเร็จ: ${j.tx.length} รายการสต็อก, ${j.repairs.length} งานซ่อม`);
+    const incremental = state.source === 'sheet';
+    const j = await api(null, { action: 'sync', txFrom: incremental ? state.txCursor || 0 : 0 });
+    const keepTx = state.tx.filter(t => t._pending);
+    const keepRp = state.repairs.filter(r => r._pending || r._pendingStatus);
+    const keepEq = state.master.filter(m => m._pending || m._pendingUpdate);
+    let tx = j.tx;
+    if (incremental && !j.reset) {
+      const held = state.tx.filter(t => !t._pending), have = new Set(held.map(t => t.Transaction_ID));
+      tx = held.concat(j.tx.filter(t => !have.has(t.Transaction_ID)));
+    }
+    const txIds = new Set(tx.map(t => t.Transaction_ID));
+    state.tx = tx.concat(keepTx.filter(t => !txIds.has(t.Transaction_ID)));
+    state.master = j.master.map(m => keepEq.find(k => k.Equipment_ID === m.Equipment_ID) || m).concat(keepEq.filter(k => !j.master.some(m => m.Equipment_ID === k.Equipment_ID)));
+    state.repairs = j.repairs.map(r => keepRp.find(k => k.Repair_ID === r.Repair_ID) || r).concat(keepRp.filter(k => !j.repairs.some(r => r.Repair_ID === k.Repair_ID)));
+    state.txCursor = j.txTotal; state.source = 'sheet'; state.lastSync = new Date().toISOString();
+    save(); ok = true;
+    if (!quiet) toast(`ซิงก์สำเร็จ: ทะเบียน ${j.master.length} · รับ-เบิกใหม่ ${j.tx.length} แถว (รวม ${j.txTotal}) · แจ้งซ่อม ${j.repairs.length}`);
   } catch (e) {
     toast('ซิงก์ไม่สำเร็จ: ' + e.message, 'err');
   } finally { syncing = false; render(); }
+  return ok;
 }
-async function sendOne(payload, item, flag) {
+/** Send one write now. On failure it stays flagged and goes out with the next sync. */
+async function sendNow(fn) {
   if (!settings.url) return 'local';
-  try { await api(payload); delete item[flag]; save(); renderSync(); return 'sent'; }
-  catch (e) { return 'failed'; }
+  try { await fn(); save(); renderSync(); return 'sent'; } catch (e) { return e.message || 'failed'; }
+}
+function resultToast(res, okMsg) {
+  if (res === 'local' || res === 'sent') toast(okMsg + (res === 'sent' ? ' (บันทึกลง Google Sheets แล้ว)' : ''));
+  else if (res === 'queued') toast(okMsg + ' (รอส่งเข้าชีต)', 'warn');
+  else toast(`บันทึกในเครื่องแล้ว แต่ส่งเข้าชีตไม่สำเร็จ: ${res}`, 'warn');
 }
 
-/* ------------------------------------------------------------------ *
+/* ================================================================== *
  *  Events                                                             *
- * ------------------------------------------------------------------ */
+ * ================================================================== */
 document.addEventListener('click', e => {
-  const p = e.target.closest('[data-preset]');
+  const t = e.target;
+  if (t.closest('#detail-close') || t === $('#detail')) { closeDetail(); return; }
+  const quick = t.closest('[data-quick]');
+  if (quick) {
+    closeDetail(); ui.formTab = 'stock'; ui.txType = quick.dataset.type; ui.preselect = quick.dataset.quick; $('#f-eq-q').value = '';
+    if (currentView() === 'entry') renderEntry(); else location.hash = 'entry';
+    return;
+  }
+  const ed = t.closest('[data-edit-eq]');
+  if (ed) {
+    closeDetail(); ui.editId = ed.dataset.editEq; fillEqForm(eqIndex().get(ui.editId));
+    if (currentView() === 'registry') { renderRegistry(); window.scrollTo(0, 0); } else location.hash = 'registry';
+    return;
+  }
+  const det = t.closest('[data-detail]');
+  if (det) { openDetail(det.dataset.detail); return; }
+  if (t.closest('[data-new-eq]')) { ui.editId = ''; fillEqForm(null); }
+  const ig = t.closest('[data-invf-go]');
+  if (ig) ui.invFilter = ig.dataset.invfGo;
+  const go = t.closest('[data-go]');
+  if (go) { e.preventDefault(); if (currentView() === go.dataset.go && location.hash) render(); else location.hash = go.dataset.go; return; }
+  const p = t.closest('[data-preset]');
   if (p) { ui.preset = p.dataset.preset; saveUI(); renderDashboard(); return; }
-  const f = e.target.closest('[data-invf]');
-  if (f) { ui.invFilter = f.dataset.invf; renderInventory(); return; }
-  if (e.target.closest('#kpi-alert')) { ui.invFilter = 'alert'; location.hash = 'stock'; return; }
-  const ft = e.target.closest('[data-ftab]');
+  const f = t.closest('[data-invf]');
+  if (f) { ui.invFilter = f.dataset.invf; renderStock(); return; }
+  const ft = t.closest('[data-ftab]');
   if (ft) { ui.formTab = ft.dataset.ftab; saveUI(); renderEntry(); return; }
-  const tt = e.target.closest('[data-txtype]');
+  const tt = t.closest('[data-txtype]');
   if (tt) { ui.txType = tt.dataset.txtype; renderEntry(); return; }
-  const rs = e.target.closest('[data-rstatus]');
+  const rs = t.closest('[data-rstatus]');
   if (rs) { ui.rStatus = rs.dataset.rstatus; renderEntry(); return; }
-  const st = e.target.closest('[data-step]');
+  const ec = t.closest('[data-ecat]');
+  if (ec) { ui.eCat = ec.dataset.ecat; renderRegistry(); return; }
+  const st = t.closest('[data-step]');
   if (st) {
     const inp = $('#f-qty'), cur = Math.max(0, parseInt(inp.value, 10) || 0);
-    inp.value = st.dataset.step === 'reset' ? 1 : Math.max(0, cur + Number(st.dataset.step));
+    inp.value = st.dataset.step === 'reset' ? 1 : Math.max(1, cur + Number(st.dataset.step));
     $('#stock-error').hidden = true;
   }
 });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#detail').hidden) closeDetail(); });
 $('#c-start').addEventListener('change', e => { ui.cStart = e.target.value; saveUI(); renderDashboard(); });
 $('#c-end').addEventListener('change', e => { ui.cEnd = e.target.value; saveUI(); renderDashboard(); });
 $('#mat-filter').addEventListener('change', e => { ui.material = e.target.value; renderDashboard(); });
-$('#inv-search').addEventListener('input', e => { ui.search = e.target.value; renderInventory(); });
-$('#f-material').addEventListener('input', updateBalanceHint);
+$('#inv-search').addEventListener('input', e => { ui.search = e.target.value; renderStock(); });
+$('#eq-search').addEventListener('input', e => { ui.eqSearch = e.target.value; renderRegistry(); });
+$('#f-eq').addEventListener('change', () => { $('#stock-error').hidden = true; updateEqCard(); });
+$('#f-eq-q').addEventListener('input', e => {
+  $('#f-eq').innerHTML = eqOptions($('#f-eq').value, e.target.value);
+  const opts = $$('#f-eq option').filter(o => o.value);
+  if (opts.length === 1) $('#f-eq').value = opts[0].value;
+  updateEqCard();
+});
 
 $('#form-stock').addEventListener('submit', async e => {
   e.preventDefault();
   const err = $('#stock-error'), show = m => { err.textContent = m; err.hidden = false; };
   err.hidden = true;
-  const material = $('#f-material').value.trim().replace(/\s+/g, ' ');
-  const qty = parseInt($('#f-qty').value, 10);
-  const date = $('#f-date').value, person = $('#f-person').value.trim();
-  const expiry = $('#f-expiry').value, maintenance = $('#f-maint').value;
-  if (!material) return show('กรุณากรอกชื่อวัสดุ');
-  if (!(qty >= 0) || (qty === 0 && !isISO(maintenance))) return show('จำนวนต้องมากกว่า 0 (ใส่ 0 ได้เฉพาะเมื่อต้องการอัปเดตวันบำรุงรักษาอย่างเดียว)');
+  const id = $('#f-eq').value, qty = parseInt($('#f-qty').value, 10), date = $('#f-date').value, who = $('#f-person').value.trim();
+  if (!eqIndex().has(id)) return show('กรุณาเลือกอุปกรณ์ / วัสดุจากทะเบียน');
+  if (!(qty > 0)) return show('จำนวนต้องเป็นตัวเลขมากกว่า 0');
   if (!isISO(date)) return show('กรุณาเลือกวันที่ทำรายการ');
-  if (!person) return show('กรุณากรอกชื่อผู้แจ้งเบิก / ผู้บันทึก');
-  if (ui.txType === 'OUT') {
-    const bal = balanceOf(material);
-    if (qty > bal) return show(`เบิกเกินยอดคงเหลือ: มีอยู่ ${fmtNum(bal)} ${metaOf(material).unit || 'หน่วย'}`);
-  }
-  const t = { id: uid('tx'), timestamp: new Date().toISOString(), date, material, type: ui.txType, qty, person, expiry, maintenance, note: $('#f-note').value.trim(), _pending: !!settings.url };
+  if (date > today()) return show('วันที่ทำรายการต้องไม่เกินวันนี้');
+  if (!who) return show('กรุณากรอกชื่อผู้เบิก / ผู้บันทึก');
+  if (ui.txType === 'OUT' && qty > onHand(id)) return show(`เบิกเกินยอดคงเหลือ: มีอยู่ ${fmtNum(onHand(id))} ${unitOf(id)}`);
+  const t = { Transaction_ID: rid('TX'), Timestamp: stamp(date), Equipment_ID: id, Type: ui.txType, Quantity: qty, Requester: who, Notes: $('#f-note').value.trim(), _pending: !!settings.url };
   state.tx.push(t); save();
-  const r = await sendOne({ action: 'addTx', data: clean(t) }, t, '_pending');
-  const verb = t.type === 'IN' ? 'รับเข้า' : 'เบิกออก';
-  toast(r === 'failed' ? `บันทึกในเครื่องแล้ว แต่ส่งเข้าชีตไม่สำเร็จ จะลองส่งใหม่ภายหลัง` : `${verb} ${fmtNum(qty)} ${metaOf(material).unit} สำเร็จ${r === 'sent' ? ' (ส่งเข้า Google Sheets แล้ว)' : ''}`, r === 'failed' ? 'warn' : 'ok');
-  ['#f-material', '#f-expiry', '#f-maint', '#f-note'].forEach(s => $(s).value = '');
-  $('#f-qty').value = 1;
+  // an item still waiting for its server ID must reach the sheet first: send everything in order
+  const res = eqIndex().get(id)._pending ? ((await syncAll({ quiet: true })) ? 'sent' : 'queued')
+    : await sendNow(async () => { await api({ action: 'addTx', data: clean(t) }); delete t._pending; });
+  resultToast(res, `${t.Type === 'IN' ? 'รับเข้า' : 'เบิกออก'} ${fmtNum(qty)} ${unitOf(t.Equipment_ID)} · ${nameOf(t.Equipment_ID)}`);
+  $('#f-note').value = ''; $('#f-qty').value = 1;
   renderEntry();
 });
 
@@ -998,33 +1232,62 @@ $('#form-repair').addEventListener('submit', async e => {
   e.preventDefault();
   const err = $('#repair-error'), show = m => { err.textContent = m; err.hidden = false; };
   err.hidden = true;
-  const equipment = $('#r-equipment').value.trim().replace(/\s+/g, ' '), date = $('#r-date').value;
-  const issue = $('#r-issue').value.trim(), reporter = $('#r-reporter').value.trim();
-  if (!equipment) return show('กรุณากรอกชื่อวัสดุ / อุปกรณ์');
+  const id = $('#r-eq').value, date = $('#r-date').value, issue = $('#r-issue').value.trim(), who = $('#r-reporter').value.trim();
+  if (!eqIndex().has(id)) return show('กรุณาเลือกอุปกรณ์จากทะเบียน');
   if (!isISO(date)) return show('กรุณาเลือกวันที่แจ้งซ่อม');
-  if (!issue) return show('กรุณาอธิบายอาการเสีย / สาเหตุ');
-  if (!reporter) return show('กรุณากรอกชื่อผู้แจ้งซ่อม');
-  const r = { id: uid('rp'), timestamp: new Date().toISOString(), date, equipment, issue, reporter, status: ui.rStatus, updatedAt: '', _pending: !!settings.url };
+  if (!issue) return show('กรุณาอธิบายอาการเสีย');
+  if (!who) return show('กรุณากรอกชื่อผู้แจ้งซ่อม');
+  const r = { Repair_ID: rid('RP'), Timestamp: stamp(date), Equipment_ID: id, Issue_Description: issue, Reporter: who, Status: ui.rStatus, Updated_At: '', _pending: !!settings.url };
   state.repairs.push(r); save();
-  const res = await sendOne({ action: 'addRepair', data: clean(r) }, r, '_pending');
-  toast(res === 'failed' ? 'บันทึกในเครื่องแล้ว แต่ส่งเข้าชีตไม่สำเร็จ จะลองส่งใหม่ภายหลัง' : 'บันทึกแจ้งซ่อมสำเร็จ' + (res === 'sent' ? ' (ส่งเข้า Google Sheets แล้ว)' : ''), res === 'failed' ? 'warn' : 'ok');
-  ['#r-equipment', '#r-issue'].forEach(s => $(s).value = '');
-  ui.rStatus = 'รอดำเนินการ';
+  const res = eqIndex().get(id)._pending ? ((await syncAll({ quiet: true })) ? 'sent' : 'queued')
+    : await sendNow(async () => { await api({ action: 'addRepair', data: clean(r) }); delete r._pending; });
+  resultToast(res, `บันทึกใบแจ้งซ่อม ${r.Repair_ID}`);
+  $('#r-issue').value = ''; ui.rStatus = STATUSES[0];
   renderEntry();
 });
 
 $('#repair-list').addEventListener('change', async e => {
   const sel = e.target.closest('[data-repair-id]');
   if (!sel) return;
-  const r = state.repairs.find(x => x.id === sel.dataset.repairId);
+  const r = state.repairs.find(x => x.Repair_ID === sel.dataset.repairId);
   if (!r) return;
-  r.status = sel.value; r.updatedAt = new Date().toISOString();
-  if (settings.url) r._pendingStatus = true;
+  r.Status = sel.value; r.Updated_At = new Date().toISOString();
+  if (settings.url && !r._pending) r._pendingStatus = true;
   save();
-  const res = r._pending ? 'local' : await sendOne({ action: 'updateRepair', data: { id: r.id, status: r.status, updatedAt: r.updatedAt } }, r, '_pendingStatus');
-  toast(res === 'failed' ? 'เปลี่ยนสถานะในเครื่องแล้ว แต่ส่งเข้าชีตไม่สำเร็จ' : `เปลี่ยนสถานะเป็น "${r.status}" แล้ว`, res === 'failed' ? 'warn' : 'ok');
+  const res = r._pending ? 'queued' : await sendNow(async () => { await api({ action: 'updateRepair', data: { Repair_ID: r.Repair_ID, Status: r.Status } }); delete r._pendingStatus; });
+  resultToast(settings.url ? res : 'local', `เปลี่ยนสถานะเป็น "${r.Status}"`);
   renderEntry();
 });
+
+$('#form-eq').addEventListener('submit', async e => {
+  e.preventDefault();
+  const err = $('#eq-error'), show = m => { err.textContent = m; err.hidden = false; };
+  err.hidden = true;
+  const name = $('#e-name').value.trim().replace(/\s+/g, ' '), unit = $('#e-unit').value.trim(), min = Number($('#e-min').value || 0);
+  if (!name) return show('กรุณากรอกชื่อวัสดุ / อุปกรณ์');
+  if (!unit) return show('กรุณากรอกหน่วยนับ');
+  if (!(min >= 0) || !Number.isInteger(min)) return show('จุดเตือนสต็อกต้องเป็นจำนวนเต็มตั้งแต่ 0');
+  const dupe = state.master.find(m => m.Material_Name.toLowerCase() === name.toLowerCase() && m.Equipment_ID !== ui.editId);
+  if (dupe) return show(`มีชื่อนี้ในทะเบียนแล้ว: ${dupe.Equipment_ID}`);
+  const fields = { Material_Name: name, Category: ui.eCat, Unit: unit, Min_Stock_Alert: min, Expiration_Date: $('#e-exp').value, Next_Maintenance_Date: $('#e-maint').value };
+
+  if (ui.editId) {
+    const m = eqIndex().get(ui.editId);
+    Object.assign(m, fields, { Updated_At: new Date().toISOString() });
+    if (settings.url && !m._pending) m._pendingUpdate = true;
+    save();
+    const res = m._pending ? 'queued' : await sendNow(async () => { await api({ action: 'updateEquipment', data: clean(m) }); delete m._pendingUpdate; });
+    resultToast(settings.url ? res : 'local', `แก้ไข ${m.Equipment_ID} แล้ว`);
+    ui.editId = ''; fillEqForm(null); renderRegistry();
+    return;
+  }
+  const m = Object.assign({ Equipment_ID: settings.url ? 'TMP-' + Math.random().toString(36).slice(2, 8).toUpperCase() : nextLocalId(), Updated_At: new Date().toISOString(), _pending: !!settings.url }, fields);
+  state.master.push(m); save();
+  const res = await sendNow(() => sendEquipment(m));
+  resultToast(res, `เพิ่ม ${m.Equipment_ID} · ${m.Material_Name} เข้าทะเบียนแล้ว`);
+  fillEqForm(null); renderRegistry();
+});
+$('#eq-cancel').addEventListener('click', () => { ui.editId = ''; fillEqForm(null); renderRegistry(); });
 
 function setupMsg(text, tone) {
   const m = $('#setup-msg');
@@ -1033,7 +1296,8 @@ function setupMsg(text, tone) {
 }
 function readSetupForm() {
   const url = $('#s-url').value.trim();
-  if (url && !/^https:\/\/script\.google(usercontent)?\.com\/.+/.test(url)) { setupMsg('URL ต้องขึ้นต้นด้วย https://script.google.com/ และลงท้ายด้วย /exec', 'err'); return false; }
+  if (url && !/^(https:\/\/script\.google(usercontent)?\.com\/|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/)/.test(url)) { setupMsg('URL ต้องขึ้นต้นด้วย https://script.google.com/ และลงท้ายด้วย /exec', 'err'); return false; }
+  if (url !== settings.url) { state.txCursor = 0; if (state.source === 'sheet') state.source = 'mock'; }
   settings = { url, key: $('#s-key').value.trim() };
   lsSet(SET_KEY, settings);
   return true;
@@ -1043,66 +1307,74 @@ $('#form-setup').addEventListener('submit', async e => {
   if (!readSetupForm()) return;
   if (!settings.url) { setupMsg('ยกเลิกการเชื่อมต่อแล้ว ใช้ข้อมูลในเครื่อง'); render(); return; }
   setupMsg('');
-  await syncAll();
-  if (state.source === 'sheet') setupMsg('เชื่อมต่อสำเร็จ ข้อมูลในแอปตรงกับ Google Sheets แล้ว');
+  if (await syncAll()) setupMsg('เชื่อมต่อสำเร็จ ข้อมูลในแอปตรงกับ Google Sheets แล้ว');
 });
 $('#btn-test').addEventListener('click', async () => {
-  if (!readSetupForm() || !settings.url) { if (!settings.url) setupMsg('กรุณาวาง Web App URL ก่อน', 'err'); return; }
+  if (!readSetupForm()) return;
+  if (!settings.url) return setupMsg('กรุณาวาง Web App URL ก่อน', 'err');
   setupMsg('กำลังทดสอบ…');
-  try { const j = await api(null); setupMsg(`เชื่อมต่อได้ พบ ${j.tx.length} รายการสต็อก และ ${j.repairs.length} งานซ่อมในชีต`); }
-  catch (e) { setupMsg('เชื่อมต่อไม่ได้: ' + e.message, 'err'); }
+  try { const j = await api(null, { action: 'sync', txFrom: 0 }); setupMsg(`เชื่อมต่อได้: ทะเบียน ${j.master.length} รายการ · รับ-เบิก ${j.txTotal} แถว · แจ้งซ่อม ${j.repairs.length} ใบ`); }
+  catch (err) { setupMsg('เชื่อมต่อไม่ได้: ' + err.message, 'err'); }
   renderSync();
 });
 $('#btn-sync').addEventListener('click', () => syncAll());
 $('#btn-reset').addEventListener('click', () => { $('#reset-confirm').hidden = false; });
 $('#btn-reset-no').addEventListener('click', () => { $('#reset-confirm').hidden = true; });
 $('#btn-reset-yes').addEventListener('click', () => {
-  state = freshMock(); save();
+  state = freshMock(); settings = { url: '', key: '' }; lsSet(SET_KEY, settings); save();
   $('#reset-confirm').hidden = true;
   toast('โหลดข้อมูลตัวอย่างใหม่แล้ว');
   render();
 });
 
-/* ------------------------------------------------------------------ *
- *  Excel export (SheetJS)                                             *
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ *  Excel report (SheetJS)                                             *
+ * ================================================================== */
+function buildReport() {
+  const range = getRange(), bal = balances(range[0], range[1]);
+  const ids = ui.material ? [ui.material] : state.master.map(m => m.Equipment_ID).sort();
+  const summary = ids.map(id => {
+    const m = eqIndex().get(id), r = bal.get(id), a = alertOf(m, onHand(id));
+    const flags = [a.exp && (a.expDays < 0 ? 'หมดอายุแล้ว' : 'ใกล้หมดอายุ'), a.maint && 'ถึงกำหนดบำรุง', a.low && 'ต่ำกว่าจุดเตือน'].filter(Boolean).join(', ');
+    return { 'Equipment_ID': id, 'ชื่อวัสดุ/อุปกรณ์': m.Material_Name, 'ประเภท': m.Category, 'หน่วย': m.Unit,
+      'ยอดยกมา': r.open, 'รับเข้าในช่วง': r.inQ, 'เบิกออกในช่วง': r.outQ, 'คงเหลือ': r.close,
+      'จุดเตือนขั้นต่ำ': Number(m.Min_Stock_Alert), 'วันหมดอายุ': m.Expiration_Date, 'วันบำรุงรักษาถัดไป': m.Next_Maintenance_Date, 'แจ้งเตือน': flags };
+  });
+  const s = sumRows(ids.map(id => bal.get(id)));
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.aoa_to_sheet([
+    ['รายงานคงคลังวัสดุและอุปกรณ์'],
+    ['ช่วงวันที่', `${range[0]} ถึง ${range[1]}`],
+    ['ขอบเขต', ui.material ? `${ui.material} ${nameOf(ui.material)}` : `ทุกรายการ (${ids.length})`],
+    ['ยอดยกมารวม', s.open], ['รับเข้ารวม', s.inQ], ['เบิกออกรวม', s.outQ], ['คงเหลือรวม', s.close],
+    ['ส่งออกเมื่อ', new Date().toLocaleString('th-TH')],
+    [],
+  ]);
+  XLSX.utils.sheet_add_json(ws1, summary, { origin: -1 });
+  ws1['!cols'] = [12, 52, 14, 8, 10, 12, 12, 10, 12, 14, 16, 30].map(w => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ws1, 'สรุปคงคลัง');
+  const moves = state.tx.filter(t => dayOf(t) >= range[0] && dayOf(t) <= range[1] && ids.includes(t.Equipment_ID))
+    .sort((a, b) => a.Timestamp.localeCompare(b.Timestamp))
+    .map(t => ({ Transaction_ID: t.Transaction_ID, Timestamp: t.Timestamp, Equipment_ID: t.Equipment_ID, 'ชื่อวัสดุ': nameOf(t.Equipment_ID), Type: t.Type, Quantity: Number(t.Quantity), Requester: t.Requester, Notes: t.Notes || '' }));
+  const reps = state.repairs.filter(r => dayOf(r) >= range[0] && dayOf(r) <= range[1] && ids.includes(r.Equipment_ID))
+    .sort((a, b) => a.Timestamp.localeCompare(b.Timestamp))
+    .map(r => ({ Repair_ID: r.Repair_ID, Timestamp: r.Timestamp, Equipment_ID: r.Equipment_ID, 'ชื่ออุปกรณ์': nameOf(r.Equipment_ID), Issue_Description: r.Issue_Description, Reporter: r.Reporter, Status: r.Status }));
+  const add = (rows, name, widths) => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'ไม่มีข้อมูลในช่วงนี้': '' }]); ws['!cols'] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };
+  add(moves, 'รายการรับ-เบิก', [24, 26, 12, 48, 6, 9, 22, 28]);
+  add(reps, 'แจ้งซ่อม', [20, 26, 12, 48, 60, 22, 16]);
+  add(state.master.filter(m => ids.includes(m.Equipment_ID)).map(clean), 'ทะเบียนอุปกรณ์', [12, 52, 14, 8, 14, 14, 20, 24]);
+  return { wb, name: `รายงานคงคลัง_${range[0]}_ถึง_${range[1]}.xlsx` };
+}
 $('#btn-export').addEventListener('click', () => {
   if (!window.XLSX) return toast('โหลดไลบรารี Excel ไม่สำเร็จ ตรวจสอบอินเทอร์เน็ต', 'err');
-  const range = getRange(), agg = aggregate(range[0], range[1], ui.material), s = totals(agg), st = materialStatus();
-  const typeTH = t => t === 'OUT' ? 'เบิกออก' : 'รับเข้า';
-  const summary = [
-    { 'หัวข้อ': 'ช่วงวันที่', 'ค่า': `${range[0]} ถึง ${range[1]}` },
-    { 'หัวข้อ': 'วัสดุ', 'ค่า': ui.material || 'ทั้งหมด' },
-    { 'หัวข้อ': 'ยอดยกมา', 'ค่า': s.open },
-    { 'หัวข้อ': 'รับเข้าทั้งหมด', 'ค่า': s.inQ },
-    { 'หัวข้อ': 'เบิกออกทั้งหมด', 'ค่า': s.outQ },
-    { 'หัวข้อ': 'คงเหลือปัจจุบัน', 'ค่า': s.close },
-    { 'หัวข้อ': 'ส่งออกเมื่อ', 'ค่า': new Date().toLocaleString('th-TH') },
-  ];
-  const stock = [...agg.values()].sort((a, b) => a.name.localeCompare(b.name, 'th')).map(r => {
-    const m = st.get(r.name) || {};
-    return { 'ชื่อวัสดุ': r.name, 'หน่วย': metaOf(r.name).unit, 'ยอดยกมา': r.open, 'รับเข้า (+)': r.inQ, 'เบิกออก (-)': r.outQ, 'คงเหลือสุทธิ': r.close,
-      'วันหมดอายุ (ล็อตใกล้สุด)': m.exp || '', 'วันบำรุงรักษา': m.maint || '', 'จำนวนแจ้งซ่อม': (m.repairs || []).length, 'งานซ่อมค้าง': m.openRepairs || 0 };
-  });
-  const moves = state.tx.filter(t => t.date >= range[0] && t.date <= range[1] && (!ui.material || t.material === ui.material))
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map(t => ({ 'วันที่ทำรายการ': t.date, 'ชื่อวัสดุ': t.material, 'ประเภทรายการ': typeTH(t.type), 'จำนวน': Number(t.qty), 'ผู้แจ้งเบิก/ผู้บันทึก': t.person, 'วันหมดอายุ': t.expiry, 'วันครบกำหนดบำรุงรักษา': t.maintenance, 'หมายเหตุ': t.note || '' }));
-  const reps = state.repairs.filter(r => r.date >= range[0] && r.date <= range[1] && (!ui.material || r.equipment === ui.material))
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map(r => ({ 'วันที่แจ้งซ่อม': r.date, 'ชื่อวัสดุ/อุปกรณ์': r.equipment, 'อาการเสีย/สาเหตุ': r.issue, 'ผู้แจ้งซ่อม': r.reporter, 'สถานะการซ่อม': r.status }));
-  const wb = XLSX.utils.book_new();
-  const addSheet = (rows, name, widths) => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'ไม่มีข้อมูล': '' }]); ws['!cols'] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };
-  addSheet(summary, 'สรุป', [20, 40]);
-  addSheet(stock, 'คงคลัง', [52, 8, 10, 10, 10, 12, 20, 16, 12, 12]);
-  addSheet(moves, 'รายการเคลื่อนไหว', [14, 52, 12, 8, 22, 14, 18, 30]);
-  addSheet(reps, 'แจ้งซ่อม', [14, 52, 60, 22, 16]);
-  XLSX.writeFile(wb, `รายงานคลัง_${range[0]}_ถึง_${range[1]}.xlsx`);
-  toast('ส่งออกไฟล์ Excel แล้ว');
+  const { wb, name } = buildReport();
+  XLSX.writeFile(wb, name);
+  toast('ส่งออกรายงาน Excel แล้ว');
 });
 
-/* ------------------------------------------------------------------ *
+/* ================================================================== *
  *  Boot                                                               *
- * ------------------------------------------------------------------ */
+ * ================================================================== */
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
 new MutationObserver(() => render()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 route();

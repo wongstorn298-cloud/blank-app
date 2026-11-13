@@ -1,77 +1,69 @@
 /**
- * Google Apps Script backend for "คลังน้ำยาแล็บ DNA"
- * ---------------------------------------------------
- * - doGet  ?action=list&key=...  → returns every stock transaction and repair as JSON
- * - doPost {action, key, data}   → addTx | addRepair | updateRepair
+ * Google Apps Script backend — คลังน้ำยาแล็บ DNA (v2)
+ * =====================================================
+ * Three sheets, three roles:
  *
- * Two sheets are created automatically (run setup() once):
- *   "รายการสต็อก"  one row per stock in/out
- *   "แจ้งซ่อม"     one row per repair / maintenance request
+ *   Equipment_Master  one row per item (the only sheet whose rows are edited)
+ *   Transactions      append-only stock movements: never edited, never deleted
+ *   Maintenance_Log   one row per repair ticket (only Status / Updated_At change)
  *
- * Download as Excel any time: File → Download → Microsoft Excel (.xlsx)
+ * Balances are never stored. Opening / In / Out / Closing are computed from
+ * Transactions for whatever date range is asked, so old rows never need to be
+ * deleted to keep the numbers right.
+ *
+ * Endpoints (deploy as Web App, see README.md):
+ *   GET  ?action=sync&txFrom=N   master + repairs + Transactions rows after the first N
+ *   GET  ?action=report&start=YYYY-MM-DD&end=YYYY-MM-DD   per-item balances, computed here
+ *   GET  ?action=ping
+ *   POST {action, key, data}     addEquipment | updateEquipment | addTx | addRepair | updateRepair
+ *
+ * POST bodies are sent as text/plain JSON so the browser skips the CORS preflight.
  */
 
-// รหัสลับ (ไม่บังคับแต่แนะนำ) ต้องตรงกับช่อง "รหัสลับ" ในหน้าตั้งค่าของแอป
-// เว้นว่าง '' เพื่อปิดการตรวจรหัส
+// รหัสลับ ต้องตรงกับช่อง "รหัสลับ" ในหน้าตั้งค่าของแอป (เว้นว่าง '' เพื่อปิดการตรวจ)
 const API_KEY = '';
 
-const TX_SHEET = {
-  name: 'รายการสต็อก',
-  cols: [
-    ['id', 'รหัสรายการ'],
-    ['timestamp', 'บันทึกเมื่อ'],
-    ['date', 'วันที่ทำรายการ'],
-    ['material', 'ชื่อวัสดุ'],
-    ['type', 'ประเภทรายการ'],
-    ['qty', 'จำนวน'],
-    ['person', 'ผู้แจ้งเบิก/ผู้บันทึก'],
-    ['expiry', 'วันหมดอายุ'],
-    ['maintenance', 'วันครบกำหนดบำรุงรักษา'],
-    ['note', 'หมายเหตุ'],
-  ],
+const SHEETS = {
+  master: {
+    name: 'Equipment_Master',
+    cols: ['Equipment_ID', 'Material_Name', 'Category', 'Unit', 'Min_Stock_Alert', 'Expiration_Date', 'Next_Maintenance_Date', 'Updated_At'],
+    numeric: ['Min_Stock_Alert'],
+  },
+  tx: {
+    name: 'Transactions',
+    cols: ['Transaction_ID', 'Timestamp', 'Equipment_ID', 'Type', 'Quantity', 'Requester', 'Notes'],
+    numeric: ['Quantity'],
+  },
+  repair: {
+    name: 'Maintenance_Log',
+    cols: ['Repair_ID', 'Timestamp', 'Equipment_ID', 'Issue_Description', 'Reporter', 'Status', 'Updated_At'],
+    numeric: [],
+  },
 };
 
-const REPAIR_SHEET = {
-  name: 'แจ้งซ่อม',
-  cols: [
-    ['id', 'รหัสรายการ'],
-    ['timestamp', 'บันทึกเมื่อ'],
-    ['date', 'วันที่แจ้งซ่อม'],
-    ['equipment', 'ชื่อวัสดุ/อุปกรณ์'],
-    ['issue', 'อาการเสีย/สาเหตุ'],
-    ['reporter', 'ผู้แจ้งซ่อม'],
-    ['status', 'สถานะการซ่อม'],
-    ['updatedAt', 'อัปเดตล่าสุด'],
-  ],
-};
-
-const TYPE_TO_TH = { IN: 'รับเข้า', OUT: 'เบิกออก' };
+const CATEGORIES = ['สิ้นเปลือง', 'ทรัพย์สินถาวร'];
 const STATUSES = ['รอดำเนินการ', 'กำลังซ่อม', 'ซ่อมเสร็จแล้ว'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?([+-]\d{2}:\d{2}|Z)?$/;
+const EDITABLE_MASTER = ['Material_Name', 'Category', 'Unit', 'Min_Stock_Alert', 'Expiration_Date', 'Next_Maintenance_Date'];
 
-/** Run once from the editor: creates both sheets with Thai headers. */
+/** Run once from the editor: creates the three sheets with headers. */
 function setup() {
-  getSheet_(TX_SHEET);
-  getSheet_(REPAIR_SHEET);
+  Object.keys(SHEETS).forEach(function (k) { sheet_(k); });
 }
 
-/* ------------------------------------------------------------------ */
+/* ================================================================== */
 
 function doGet(e) {
   try {
     const p = (e && e.parameter) || {};
     checkKey_(p.key);
-    const action = p.action || 'list';
-    if (action === 'ping') return json_({ ok: true });
-    if (action !== 'list') throw new Error('ไม่รู้จักคำสั่ง: ' + action);
-
-    const tx = readRows_(TX_SHEET).map(function (r) {
-      r.type = r.type === 'เบิกออก' || r.type === 'OUT' ? 'OUT' : 'IN';
-      r.qty = Number(r.qty) || 0;
-      return r;
-    });
-    const repairs = readRows_(REPAIR_SHEET);
-    return json_({ ok: true, tx: tx, repairs: repairs });
+    switch (p.action || 'sync') {
+      case 'ping': return json_({ ok: true });
+      case 'sync': return json_(sync_(Math.max(0, parseInt(p.txFrom, 10) || 0)));
+      case 'report': return json_(report_(p.start, p.end));
+      default: throw new Error('ไม่รู้จักคำสั่ง: ' + p.action);
+    }
   } catch (err) {
     return json_({ ok: false, error: String(err.message || err) });
   }
@@ -79,49 +71,171 @@ function doGet(e) {
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
+  let locked = false;
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     checkKey_(body.key);
     lock.waitLock(20000);
+    locked = true;
     const d = body.data || {};
-
     switch (body.action) {
-      case 'addTx': {
-        const row = validateTx_(d);
-        const sh = getSheet_(TX_SHEET);
-        if (findRow_(sh, row.id)) return json_({ ok: true, duplicate: true });
-        appendObj_(sh, TX_SHEET, row);
-        return json_({ ok: true });
-      }
-      case 'addRepair': {
-        const row = validateRepair_(d);
-        const sh = getSheet_(REPAIR_SHEET);
-        if (findRow_(sh, row.id)) return json_({ ok: true, duplicate: true });
-        appendObj_(sh, REPAIR_SHEET, row);
-        return json_({ ok: true });
-      }
-      case 'updateRepair': {
-        const status = String(d.status || '');
-        if (STATUSES.indexOf(status) < 0) throw new Error('สถานะไม่ถูกต้อง');
-        const sh = getSheet_(REPAIR_SHEET);
-        const r = findRow_(sh, String(d.id || ''));
-        if (!r) throw new Error('ไม่พบรายการแจ้งซ่อม id: ' + d.id);
-        const colOf = function (k) { return REPAIR_SHEET.cols.map(function (c) { return c[0]; }).indexOf(k) + 1; };
-        sh.getRange(r, colOf('status')).setValue(status);
-        sh.getRange(r, colOf('updatedAt')).setValue(new Date().toISOString());
-        return json_({ ok: true });
-      }
-      default:
-        throw new Error('ไม่รู้จักคำสั่ง: ' + body.action);
+      case 'addEquipment': return json_(addEquipment_(d));
+      case 'updateEquipment': return json_(updateEquipment_(d));
+      case 'addTx': return json_(addTx_(d));
+      case 'addRepair': return json_(addRepair_(d));
+      case 'updateRepair': return json_(updateRepair_(d));
+      default: throw new Error('ไม่รู้จักคำสั่ง: ' + body.action);
     }
   } catch (err) {
     return json_({ ok: false, error: String(err.message || err) });
   } finally {
-    try { lock.releaseLock(); } catch (ignore) { /* lock was never taken */ }
+    if (locked) lock.releaseLock();
   }
 }
 
-/* ------------------------------------------------------------------ */
+/* ============================ reads =============================== */
+
+/**
+ * Incremental sync. Transactions is append-only, so a client that already
+ * holds the first N rows only needs the rows after N. If the sheet now has
+ * fewer rows than the client thinks (someone deleted rows by hand), the full
+ * log is sent and reset=true tells the client to replace its copy.
+ */
+function sync_(txFrom) {
+  const total = dataRows_('tx');
+  let reset = false;
+  if (txFrom > total) { txFrom = 0; reset = true; }
+  return {
+    ok: true,
+    master: readRows_('master', 0),
+    repairs: readRows_('repair', 0),
+    tx: readRows_('tx', txFrom),
+    txFrom: txFrom,
+    txTotal: total,
+    reset: reset,
+    serverTime: new Date().toISOString(),
+  };
+}
+
+/** Server-side balances for a date range (for other tools, or very large logs). */
+function report_(start, end) {
+  if (!DATE_RE.test(String(start || '')) || !DATE_RE.test(String(end || ''))) throw new Error('start และ end ต้องอยู่ในรูปแบบ YYYY-MM-DD');
+  if (start > end) { const t = start; start = end; end = t; }
+  const rows = {};
+  readRows_('master', 0).forEach(function (m) {
+    rows[m.Equipment_ID] = { Equipment_ID: m.Equipment_ID, Material_Name: m.Material_Name, Unit: m.Unit, Min_Stock_Alert: m.Min_Stock_Alert, Opening: 0, In: 0, Out: 0, Closing: 0 };
+  });
+  readRows_('tx', 0).forEach(function (t) {
+    const r = rows[t.Equipment_ID];
+    if (!r) return;
+    const day = String(t.Timestamp).slice(0, 10), q = Number(t.Quantity) || 0, sign = t.Type === 'OUT' ? -1 : 1;
+    if (day < start) r.Opening += sign * q;
+    else if (day <= end) { if (t.Type === 'OUT') r.Out += q; else r.In += q; }
+  });
+  const list = Object.keys(rows).map(function (k) { const r = rows[k]; r.Closing = r.Opening + r.In - r.Out; return r; });
+  return { ok: true, start: start, end: end, rows: list };
+}
+
+/* ============================ writes ============================== */
+
+function addEquipment_(d) {
+  const name = text_(d.Material_Name, 200);
+  if (!name) throw new Error('กรุณาระบุชื่อวัสดุ/อุปกรณ์');
+  const master = readRows_('master', 0);
+  const same = master.filter(function (m) { return norm_(m.Material_Name) === norm_(name); })[0];
+  if (same) return { ok: true, id: same.Equipment_ID, duplicate: true };
+
+  const row = {
+    Equipment_ID: nextEquipmentId_(master),
+    Material_Name: name,
+    Category: category_(d.Category),
+    Unit: text_(d.Unit, 30) || 'ชิ้น',
+    Min_Stock_Alert: wholeNumber_(d.Min_Stock_Alert, 'จุดเตือนสต็อกขั้นต่ำ'),
+    Expiration_Date: optDate_(d.Expiration_Date, 'วันหมดอายุ'),
+    Next_Maintenance_Date: optDate_(d.Next_Maintenance_Date, 'วันครบกำหนดบำรุงรักษา'),
+    Updated_At: new Date().toISOString(),
+  };
+  append_('master', row);
+  return { ok: true, id: row.Equipment_ID };
+}
+
+function updateEquipment_(d) {
+  const id = String(d.Equipment_ID || '');
+  const sh = sheet_('master');
+  const r = findRow_(sh, id);
+  if (!r) throw new Error('ไม่พบอุปกรณ์รหัส ' + id);
+  const cols = SHEETS.master.cols;
+  const clean = {
+    Material_Name: function (v) { const s = text_(v, 200); if (!s) throw new Error('ชื่อวัสดุห้ามว่าง'); return s; },
+    Category: category_,
+    Unit: function (v) { return text_(v, 30) || 'ชิ้น'; },
+    Min_Stock_Alert: function (v) { return wholeNumber_(v, 'จุดเตือนสต็อกขั้นต่ำ'); },
+    Expiration_Date: function (v) { return optDate_(v, 'วันหมดอายุ'); },
+    Next_Maintenance_Date: function (v) { return optDate_(v, 'วันครบกำหนดบำรุงรักษา'); },
+  };
+  EDITABLE_MASTER.forEach(function (k) {
+    if (Object.prototype.hasOwnProperty.call(d, k)) sh.getRange(r, cols.indexOf(k) + 1).setValue(clean[k](d[k]));
+  });
+  sh.getRange(r, cols.indexOf('Updated_At') + 1).setValue(new Date().toISOString());
+  return { ok: true };
+}
+
+function addTx_(d) {
+  const id = text_(d.Transaction_ID, 60);
+  if (!id) throw new Error('ไม่มี Transaction_ID');
+  const sh = sheet_('tx');
+  if (findRow_(sh, id)) return { ok: true, duplicate: true };
+
+  const eqId = String(d.Equipment_ID || '');
+  if (!findRow_(sheet_('master'), eqId)) throw new Error('ไม่พบอุปกรณ์รหัส ' + eqId + ' ในทะเบียน');
+  const type = d.Type === 'OUT' ? 'OUT' : d.Type === 'IN' ? 'IN' : '';
+  if (!type) throw new Error('Type ต้องเป็น IN หรือ OUT');
+  const qty = Number(d.Quantity);
+  if (!(qty > 0) || Math.floor(qty) !== qty) throw new Error('จำนวนต้องเป็นจำนวนเต็มมากกว่า 0');
+  const stamp = String(d.Timestamp || '');
+  if (!STAMP_RE.test(stamp)) throw new Error('Timestamp ไม่ถูกต้อง');
+  const requester = text_(d.Requester, 100);
+  if (!requester) throw new Error('กรุณาระบุผู้เบิก/ผู้บันทึก');
+  if (type === 'OUT') {
+    const bal = balance_(eqId);
+    if (qty > bal) throw new Error('ยอดคงเหลือไม่พอ: ' + eqId + ' คงเหลือ ' + bal);
+  }
+  append_('tx', { Transaction_ID: id, Timestamp: stamp, Equipment_ID: eqId, Type: type, Quantity: qty, Requester: requester, Notes: text_(d.Notes, 300) });
+  return { ok: true };
+}
+
+function addRepair_(d) {
+  const id = text_(d.Repair_ID, 60);
+  if (!id) throw new Error('ไม่มี Repair_ID');
+  const sh = sheet_('repair');
+  if (findRow_(sh, id)) return { ok: true, duplicate: true };
+  const eqId = String(d.Equipment_ID || '');
+  if (!findRow_(sheet_('master'), eqId)) throw new Error('ไม่พบอุปกรณ์รหัส ' + eqId + ' ในทะเบียน');
+  const stamp = String(d.Timestamp || '');
+  if (!STAMP_RE.test(stamp)) throw new Error('Timestamp ไม่ถูกต้อง');
+  const issue = text_(d.Issue_Description, 1000);
+  if (!issue) throw new Error('กรุณาระบุอาการเสีย');
+  const reporter = text_(d.Reporter, 100);
+  if (!reporter) throw new Error('กรุณาระบุผู้แจ้งซ่อม');
+  append_('repair', {
+    Repair_ID: id, Timestamp: stamp, Equipment_ID: eqId, Issue_Description: issue, Reporter: reporter,
+    Status: STATUSES.indexOf(d.Status) >= 0 ? d.Status : STATUSES[0], Updated_At: '',
+  });
+  return { ok: true };
+}
+
+function updateRepair_(d) {
+  if (STATUSES.indexOf(d.Status) < 0) throw new Error('สถานะไม่ถูกต้อง');
+  const sh = sheet_('repair');
+  const r = findRow_(sh, String(d.Repair_ID || ''));
+  if (!r) throw new Error('ไม่พบใบแจ้งซ่อม ' + d.Repair_ID);
+  const cols = SHEETS.repair.cols;
+  sh.getRange(r, cols.indexOf('Status') + 1).setValue(d.Status);
+  sh.getRange(r, cols.indexOf('Updated_At') + 1).setValue(new Date().toISOString());
+  return { ok: true };
+}
+
+/* ============================ helpers ============================= */
 
 function checkKey_(key) {
   if (API_KEY && key !== API_KEY) throw new Error('รหัสลับไม่ถูกต้อง');
@@ -131,56 +245,84 @@ function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function getSheet_(def) {
+function sheet_(key) {
+  const def = SHEETS[key];
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(def.name);
   if (!sh) sh = ss.insertSheet(def.name);
   if (sh.getLastRow() === 0) {
     const n = def.cols.length;
-    sh.getRange(1, 1, 1, n).setValues([def.cols.map(function (c) { return c[1]; })]).setFontWeight('bold').setBackground('#e1f0ef');
+    sh.getRange(1, 1, 1, n).setValues([def.cols]).setFontWeight('bold').setBackground('#e1f0ef');
     sh.setFrozenRows(1);
-    // keep dates and ids as plain text so they are not reformatted by the sheet locale
+    // ids, dates and timestamps stay plain text so the sheet locale cannot reformat them
     def.cols.forEach(function (c, i) {
-      if (c[0] !== 'qty') sh.getRange(2, i + 1, sh.getMaxRows() - 1, 1).setNumberFormat('@');
+      if (def.numeric.indexOf(c) < 0) sh.getRange(2, i + 1, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@');
     });
-    sh.autoResizeColumns(1, n);
   }
   return sh;
 }
 
-function readRows_(def) {
-  const sh = getSheet_(def);
-  const last = sh.getLastRow();
-  if (last < 2) return [];
+function dataRows_(key) {
+  return Math.max(0, sheet_(key).getLastRow() - 1);
+}
+
+/** Rows as objects keyed by header, skipping the first `skip` data rows. */
+function readRows_(key, skip) {
+  const def = SHEETS[key], sh = sheet_(key), total = dataRows_(key);
+  if (total <= skip) return [];
   const tz = Session.getScriptTimeZone();
-  const values = sh.getRange(2, 1, last - 1, def.cols.length).getValues();
-  return values
-    .filter(function (row) { return row[0] !== '' && row[0] !== null; })
-    .map(function (row) {
-      const o = {};
-      def.cols.forEach(function (c, i) {
-        let v = row[i];
-        if (v instanceof Date) v = Utilities.formatDate(v, tz, c[0] === 'timestamp' || c[0] === 'updatedAt' ? "yyyy-MM-dd'T'HH:mm:ss" : 'yyyy-MM-dd');
-        o[c[0]] = v === null || v === undefined ? '' : (c[0] === 'qty' ? v : String(v));
-      });
-      return o;
+  const values = sh.getRange(2 + skip, 1, total - skip, def.cols.length).getValues();
+  const out = [];
+  values.forEach(function (row) {
+    if (row[0] === '' || row[0] === null) return;
+    const o = {};
+    def.cols.forEach(function (c, i) {
+      let v = row[i];
+      if (v instanceof Date) {
+        v = /Timestamp|Updated_At/.test(c) ? Utilities.formatDate(v, tz, "yyyy-MM-dd'T'HH:mm:ss") : Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+      }
+      if (def.numeric.indexOf(c) >= 0) o[c] = Number(v) || 0;
+      else o[c] = v === null || v === undefined ? '' : String(v);
     });
+    out.push(o);
+  });
+  return out;
 }
 
-function appendObj_(sh, def, obj) {
-  sh.appendRow(def.cols.map(function (c) { return obj[c[0]] === undefined ? '' : obj[c[0]]; }));
+function append_(key, obj) {
+  sheet_(key).appendRow(SHEETS[key].cols.map(function (c) { return obj[c] === undefined ? '' : obj[c]; }));
 }
 
-/** Returns the 1-based row number whose column A equals id, or 0. */
+/** 1-based row whose first column equals id exactly, or 0. */
 function findRow_(sh, id) {
   if (!id || sh.getLastRow() < 2) return 0;
   const hit = sh.getRange(2, 1, sh.getLastRow() - 1, 1).createTextFinder(id).matchEntireCell(true).findNext();
   return hit ? hit.getRow() : 0;
 }
 
-/** Plain text only: a leading = + - @ would otherwise be run as a formula. */
+/** Current balance of one item: sum of IN minus OUT over the whole log. */
+function balance_(eqId) {
+  const n = dataRows_('tx');
+  if (!n) return 0;
+  const cols = SHEETS.tx.cols, c0 = cols.indexOf('Equipment_ID') + 1;
+  const vals = sheet_('tx').getRange(2, c0, n, 3).getValues(); // Equipment_ID, Type, Quantity
+  let bal = 0;
+  vals.forEach(function (r) { if (String(r[0]) === eqId) bal += (r[1] === 'OUT' ? -1 : 1) * (Number(r[2]) || 0); });
+  return bal;
+}
+
+function nextEquipmentId_(master) {
+  let max = 0;
+  master.forEach(function (m) { const k = /^EQ-(\d+)$/.exec(m.Equipment_ID); if (k) max = Math.max(max, parseInt(k[1], 10)); });
+  const n = String(max + 1);
+  return 'EQ-' + (n.length < 3 ? ('000' + n).slice(-3) : n);
+}
+
+function norm_(s) { return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+
+/** Plain text only: a leading = + - @ would otherwise run as a formula. */
 function text_(v, max) {
-  let s = String(v === undefined || v === null ? '' : v).trim().slice(0, max || 300);
+  let s = String(v === undefined || v === null ? '' : v).trim().replace(/\s+/g, ' ').slice(0, max || 300);
   if (/^[=+\-@]/.test(s)) s = "'" + s;
   return s;
 }
@@ -191,47 +333,12 @@ function optDate_(v, label) {
   return s;
 }
 
-function validateTx_(d) {
-  const type = d.type === 'OUT' ? 'OUT' : d.type === 'IN' ? 'IN' : '';
-  if (!type) throw new Error('ประเภทรายการต้องเป็น IN หรือ OUT');
-  const qty = Number(d.qty);
-  if (!(qty >= 0) || Math.floor(qty) !== qty) throw new Error('จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
-  const material = text_(d.material, 200);
-  if (!material) throw new Error('กรุณาระบุชื่อวัสดุ');
-  if (!DATE_RE.test(String(d.date || ''))) throw new Error('วันที่ทำรายการไม่ถูกต้อง');
-  const person = text_(d.person, 100);
-  if (!person) throw new Error('กรุณาระบุผู้แจ้งเบิก/ผู้บันทึก');
-  return {
-    id: text_(d.id, 60) || Utilities.getUuid(),
-    timestamp: text_(d.timestamp, 40) || new Date().toISOString(),
-    date: d.date,
-    material: material,
-    type: TYPE_TO_TH[type],
-    qty: qty,
-    person: person,
-    expiry: optDate_(d.expiry, 'วันหมดอายุ'),
-    maintenance: optDate_(d.maintenance, 'วันครบกำหนดบำรุงรักษา'),
-    note: text_(d.note, 300),
-  };
+function wholeNumber_(v, label) {
+  const n = Number(v || 0);
+  if (!(n >= 0) || Math.floor(n) !== n) throw new Error(label + ' ต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
+  return n;
 }
 
-function validateRepair_(d) {
-  const equipment = text_(d.equipment, 200);
-  if (!equipment) throw new Error('กรุณาระบุชื่อวัสดุ/อุปกรณ์');
-  if (!DATE_RE.test(String(d.date || ''))) throw new Error('วันที่แจ้งซ่อมไม่ถูกต้อง');
-  const issue = text_(d.issue, 1000);
-  if (!issue) throw new Error('กรุณาระบุอาการเสีย/สาเหตุ');
-  const reporter = text_(d.reporter, 100);
-  if (!reporter) throw new Error('กรุณาระบุผู้แจ้งซ่อม');
-  const status = STATUSES.indexOf(d.status) >= 0 ? d.status : 'รอดำเนินการ';
-  return {
-    id: text_(d.id, 60) || Utilities.getUuid(),
-    timestamp: text_(d.timestamp, 40) || new Date().toISOString(),
-    date: d.date,
-    equipment: equipment,
-    issue: issue,
-    reporter: reporter,
-    status: status,
-    updatedAt: '',
-  };
+function category_(v) {
+  return CATEGORIES.indexOf(v) >= 0 ? v : CATEGORIES[0];
 }
