@@ -33,7 +33,7 @@
   :root {
     --bg: 241 245 245;  --card: 255 255 255; --ink: 15 35 38;  --muted: 84 105 109; --line: 218 227 228;
     --accent: 13 110 110; --accentink: 255 255 255; --soft: 225 240 239;
-    --in: 21 125 80; --out: 190 82 30; --warn: 156 104 0; --danger: 196 38 38;
+    --in: 21 120 76; --out: 166 62 14; --warn: 128 84 0; --danger: 190 34 34;
     --warnbg: 255 243 210; --dangerbg: 253 226 226; --okbg: 220 242 230;
   }
   @media (prefers-color-scheme: dark) {
@@ -58,6 +58,9 @@
   [hidden] { display: none !important; }
   .gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
   .num { font-variant-numeric: tabular-nums; }
+  .wrap-any { overflow-wrap: anywhere; }
+  ::selection { background: rgb(var(--accent) / .25); }
+  input, textarea { caret-color: rgb(var(--accent)); }
   h1, h2, h3 { text-wrap: balance; }
   .chips { scrollbar-width: none; }
   .chips::-webkit-scrollbar { display: none; }
@@ -77,11 +80,8 @@
       <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accentink" aria-hidden="true">
         <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 3c0 4 10 5 10 9s-10 5-10 9M17 3c0 4-10 5-10 9s10 5 10 9M8.5 7h7M8.5 17h7"/></svg>
       </div>
-      <div class="min-w-0 flex-1">
-        <h1 class="text-lg font-bold leading-tight">คลังน้ำยาแล็บ DNA</h1>
-        <p class="text-xs text-muted truncate">ทะเบียนอุปกรณ์ · บันทึกรับ-เบิก · ประวัติแจ้งซ่อม</p>
-      </div>
-      <button id="sync-chip" type="button" class="shrink-0 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-muted" data-go="setup">โหมดทดลอง</button>
+      <h1 class="min-w-0 flex-1 text-lg font-bold leading-tight">คลังน้ำยาแล็บ DNA</h1>
+      <button id="sync-chip" type="button" class="h-11 shrink-0 rounded-full border border-line px-3 text-xs font-medium text-muted" data-go="setup">ข้อมูลตัวอย่าง</button>
     </div>
   </header>
 
@@ -90,26 +90,30 @@
     <!-- ============ DASHBOARD ============ -->
     <section data-view="dashboard" class="space-y-4">
       <div class="space-y-3">
-        <div class="chips -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label="ช่วงเวลา" id="range-chips"></div>
+        <div class="grid grid-cols-4 gap-2 sm:flex sm:flex-wrap" role="group" aria-label="ช่วงเวลา" id="range-chips"></div>
         <div id="custom-range" class="grid grid-cols-2 gap-2" hidden>
-          <label class="block text-sm"><span class="mb-1 block text-muted">Start Date (เริ่มต้น)</span>
+          <label class="block text-sm"><span class="mb-1 block text-muted">วันที่เริ่มต้น</span>
             <input id="c-start" type="date" class="h-12 w-full rounded-xl border border-line bg-card px-3"></label>
-          <label class="block text-sm"><span class="mb-1 block text-muted">End Date (สิ้นสุด)</span>
+          <label class="block text-sm"><span class="mb-1 block text-muted">วันที่สิ้นสุด</span>
             <input id="c-end" type="date" class="h-12 w-full rounded-xl border border-line bg-card px-3"></label>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <p class="text-sm text-muted">ช่วงข้อมูล: <span id="range-label" class="font-semibold text-ink"></span></p>
-          <select id="mat-filter" class="ml-auto h-11 w-full min-w-0 rounded-xl border border-line bg-card px-3 text-sm sm:w-auto sm:max-w-sm" aria-label="กรองตามอุปกรณ์"></select>
+        <p class="text-sm text-muted">ช่วงข้อมูล <span id="range-label" class="font-semibold text-ink"></span></p>
+        <div class="flex gap-2">
+          <select id="mat-filter" class="h-11 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-sm sm:max-w-sm" aria-label="แสดงเฉพาะรายการ"></select>
+          <button type="button" id="btn-export" aria-label="ส่งออกรายงาน Excel ตามช่วงวันที่และรายการที่เลือก" class="inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border border-accent px-3 text-sm font-semibold text-accent">
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            <span>ส่งออก Excel</span>
+          </button>
         </div>
       </div>
 
       <div id="kpis" class="grid grid-cols-2 gap-3 lg:grid-cols-5"></div>
-      <p id="calc-note" class="rounded-xl bg-soft px-3 py-2 text-xs text-muted"></p>
+      <p id="calc-note" class="text-xs text-muted"></p>
 
       <div id="alert-panel" class="rounded-2xl border border-line bg-card p-4">
         <div class="mb-2 flex flex-wrap items-baseline justify-between gap-x-2">
           <h2 class="font-semibold">ต้องดำเนินการ</h2>
-          <span class="text-xs text-muted">ดูจากทะเบียนอุปกรณ์ ไม่ขึ้นกับช่วงวันที่</span>
+          <span class="text-xs text-muted">ณ วันนี้ ไม่ขึ้นกับช่วงวันที่</span>
         </div>
         <ul id="alert-list" class="divide-y divide-line"></ul>
       </div>
@@ -120,32 +124,33 @@
             <h2 class="font-semibold">รับเข้า เทียบ เบิกออก</h2>
             <span id="bucket-label" class="text-xs text-muted"></span>
           </div>
-          <div class="relative h-60"><canvas id="chart-flow" aria-label="กราฟรับเข้าเทียบเบิกออก"></canvas></div>
+          <p id="flow-empty" class="py-16 text-center text-sm text-muted" hidden>ไม่มีรายการรับ-เบิกในช่วงนี้</p>
+          <div class="relative h-60"><canvas id="chart-flow" role="img" aria-label="กราฟรับเข้าเทียบเบิกออกตามช่วงเวลา"></canvas></div>
         </div>
         <div class="rounded-2xl border border-line bg-card p-4 lg:col-span-2">
           <h2 class="mb-3 font-semibold">เบิกออกมากที่สุด 5 อันดับ</h2>
-          <div class="relative h-60"><canvas id="chart-top" aria-label="กราฟรายการที่เบิกมากที่สุด"></canvas></div>
+          <div class="relative h-60"><canvas id="chart-top" role="img" aria-label="กราฟ 5 รายการที่เบิกออกมากที่สุด"></canvas></div>
           <p id="top-empty" class="py-16 text-center text-sm text-muted" hidden>ไม่มีการเบิกในช่วงนี้</p>
         </div>
       </div>
 
       <div class="rounded-2xl border border-line bg-card p-4">
-        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 class="font-semibold">รายการรับ-เบิกล่าสุด</h2>
-          <button type="button" id="btn-export" class="inline-flex h-11 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accentink">
-            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-            Export Report to Excel (.xlsx)
-          </button>
-        </div>
+          <h2 class="mb-1 font-semibold">รับ-เบิกล่าสุด</h2>
         <ul id="recent" class="divide-y divide-line"></ul>
       </div>
     </section>
 
     <!-- ============ ENTRY FORMS ============ -->
     <section data-view="entry" class="space-y-4" hidden>
-      <div class="grid grid-cols-2 gap-1 rounded-2xl bg-soft p-1" role="tablist">
-        <button type="button" role="tab" data-ftab="stock" class="h-12 rounded-xl font-semibold">บันทึกรับ-เบิก</button>
-        <button type="button" role="tab" data-ftab="repair" class="h-12 rounded-xl font-semibold">แจ้งซ่อม</button>
+      <div class="grid grid-cols-2 gap-1 rounded-2xl bg-soft p-1" role="group" aria-label="เลือกแบบฟอร์ม">
+        <button type="button" data-ftab="stock" class="h-12 rounded-xl font-semibold">รับ-เบิก</button>
+        <button type="button" data-ftab="repair" class="h-12 rounded-xl font-semibold">แจ้งซ่อม</button>
+      </div>
+
+      <div id="no-items" class="space-y-3 rounded-2xl border border-line bg-card p-4" hidden>
+        <p class="font-semibold">ยังไม่มีอุปกรณ์ในทะเบียน</p>
+        <p class="text-sm text-muted">ต้องเพิ่มรายการเข้าทะเบียนก่อน จึงจะบันทึกรับ-เบิกหรือแจ้งซ่อมได้</p>
+        <button type="button" data-go="registry" data-new-eq class="h-12 w-full rounded-xl bg-accent font-semibold text-accentink">เพิ่มอุปกรณ์รายการแรก</button>
       </div>
 
       <!-- Stock movement -->
@@ -155,14 +160,14 @@
           <input id="f-eq-q" type="search" autocomplete="off" placeholder="พิมพ์เพื่อกรองรายการ (ชื่อหรือรหัส EQ)" class="h-11 w-full rounded-xl border border-line bg-card px-3 text-sm" aria-label="กรองรายการอุปกรณ์">
           <select id="f-eq" required class="h-12 w-full rounded-xl border border-line bg-card px-3"></select>
           <div id="f-eq-card" class="rounded-xl bg-soft p-3 text-sm" hidden></div>
-          <button type="button" data-go="registry" data-new-eq class="text-sm font-semibold text-accent">+ ไม่มีในรายการ? เพิ่มเข้าทะเบียนอุปกรณ์</button>
+          <button type="button" data-go="registry" data-new-eq class="min-h-11 text-sm font-semibold text-accent">ไม่พบในรายการ? เพิ่มอุปกรณ์ใหม่</button>
         </div>
 
         <fieldset>
           <legend class="mb-1 font-medium">ประเภทรายการ <span class="text-danger">*</span></legend>
           <div class="grid grid-cols-2 gap-2">
-            <button type="button" data-txtype="IN" class="h-14 rounded-xl border-2 text-base font-semibold">IN รับเข้า (+)</button>
-            <button type="button" data-txtype="OUT" class="h-14 rounded-xl border-2 text-base font-semibold">OUT เบิกออก (−)</button>
+            <button type="button" data-txtype="IN" class="h-14 rounded-xl border-2 text-base font-semibold">+ รับเข้า</button>
+            <button type="button" data-txtype="OUT" class="h-14 rounded-xl border-2 text-base font-semibold">− เบิกออก</button>
           </div>
         </fieldset>
 
@@ -170,7 +175,7 @@
           <label for="f-qty" class="mb-1 block font-medium">จำนวน <span class="text-danger">*</span> <span id="f-unit" class="text-sm font-normal text-muted"></span></label>
           <div class="flex items-stretch gap-2">
             <button type="button" data-step="-1" class="h-14 w-14 shrink-0 rounded-xl border border-line text-2xl font-semibold" aria-label="ลดจำนวน 1">−</button>
-            <input id="f-qty" type="number" inputmode="numeric" min="1" step="1" value="1" required class="num h-14 w-full min-w-0 rounded-xl border border-line bg-card text-center text-2xl font-semibold">
+            <input id="f-qty" type="number" inputmode="numeric" min="1" max="100000" step="1" value="1" required class="num h-14 w-full min-w-0 rounded-xl border border-line bg-card text-center text-2xl font-semibold">
           </div>
           <div class="mt-2 grid grid-cols-4 gap-2">
             <button type="button" data-step="1" class="h-12 rounded-xl bg-soft font-semibold">+1</button>
@@ -195,8 +200,8 @@
           <input id="f-note" placeholder="เช่น Lot No. หรือเลขที่ใบเบิก" class="h-12 w-full rounded-xl border border-line bg-card px-3">
         </div>
         <p id="stock-error" class="rounded-xl bg-dangerbg px-3 py-2 text-sm text-danger" hidden></p>
-        <button type="submit" class="h-14 w-full rounded-xl bg-accent text-lg font-semibold text-accentink">บันทึกรายการ</button>
-        <p class="text-xs text-muted">ทุกการบันทึกเพิ่มเป็นแถวใหม่ใน Transactions ไม่มีการแก้ไขแถวเดิม ถ้าบันทึกผิด ให้บันทึกรายการกลับทิศเพื่อปรับยอด</p>
+        <button type="submit" class="h-14 w-full rounded-xl bg-accent text-lg font-semibold text-accentink disabled:opacity-60">บันทึกรายการ</button>
+        <p class="text-xs text-muted">รายการที่บันทึกแล้วแก้หรือลบไม่ได้ ถ้าบันทึกผิด ให้บันทึกรายการกลับทิศ เช่น เบิกเกินไป 2 ให้บันทึกรับเข้า 2</p>
       </form>
 
       <!-- Repair ticket -->
@@ -224,7 +229,7 @@
           <div class="grid grid-cols-3 gap-2" id="r-status-group"></div>
         </fieldset>
         <p id="repair-error" class="rounded-xl bg-dangerbg px-3 py-2 text-sm text-danger" hidden></p>
-        <button type="submit" class="h-14 w-full rounded-xl bg-accent text-lg font-semibold text-accentink">บันทึกใบแจ้งซ่อม</button>
+        <button type="submit" class="h-14 w-full rounded-xl bg-accent text-lg font-semibold text-accentink disabled:opacity-60">บันทึกใบแจ้งซ่อม</button>
       </form>
 
       <div id="repair-list-wrap" class="rounded-2xl border border-line bg-card p-4" hidden>
@@ -241,7 +246,7 @@
         <input id="inv-search" type="search" placeholder="ค้นหาชื่อหรือรหัส EQ" class="h-12 w-full rounded-xl border border-line bg-card pl-10 pr-3">
       </div>
       <div class="chips -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" id="inv-chips"></div>
-      <p class="text-sm text-muted">ช่วงเดียวกับหน้าภาพรวม: <span id="inv-range" class="font-semibold text-ink"></span> · <span id="inv-count"></span> · แตะรายการเพื่อดูบัญชีคุมยอด</p>
+      <p class="text-sm text-muted">ช่วง <span id="inv-range" class="font-semibold text-ink"></span> (เปลี่ยนได้ที่หน้าภาพรวม) · <span id="inv-count"></span> · แตะรายการเพื่อดูบัญชีคุมยอด</p>
 
       <ul id="inv-cards" class="space-y-3 md:hidden"></ul>
 
@@ -290,7 +295,7 @@
           </div>
           <div>
             <label for="e-min" class="mb-1 block font-medium">จุดเตือนสต็อกขั้นต่ำ</label>
-            <input id="e-min" type="number" inputmode="numeric" min="0" step="1" value="0" class="num h-12 w-full rounded-xl border border-line bg-card px-3 text-center">
+            <input id="e-min" type="number" inputmode="numeric" min="0" max="100000" step="1" value="0" class="num h-12 w-full rounded-xl border border-line bg-card px-3 text-center">
           </div>
           <div>
             <label for="e-exp" class="mb-1 block font-medium">วันหมดอายุ</label>
@@ -302,7 +307,7 @@
           </div>
         </div>
         <p id="eq-error" class="rounded-xl bg-dangerbg px-3 py-2 text-sm text-danger" hidden></p>
-        <button type="submit" id="eq-submit" class="h-14 w-full rounded-xl bg-accent text-lg font-semibold text-accentink">เพิ่มเข้าทะเบียน</button>
+        <button type="submit" id="eq-submit" class="h-14 w-full rounded-xl bg-accent text-lg font-semibold text-accentink disabled:opacity-60">เพิ่มเข้าทะเบียน</button>
       </form>
 
       <div class="rounded-2xl border border-line bg-card p-4">
@@ -361,7 +366,7 @@
 
   <!-- Item ledger (bottom sheet) -->
   <div id="detail" class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" hidden>
-    <div class="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-card sm:rounded-3xl" role="dialog" aria-modal="true" aria-labelledby="detail-title" style="padding-bottom: env(safe-area-inset-bottom, 0px)">
+    <div id="detail-panel" class="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-card sm:rounded-3xl" role="dialog" aria-modal="true" aria-labelledby="detail-title" style="padding-bottom: env(safe-area-inset-bottom, 0px)">
       <div class="gutter sticky top-0 flex items-start gap-3 border-b border-line bg-card py-4">
         <div class="min-w-0 flex-1">
           <p id="detail-id" class="font-mono text-xs text-muted"></p>
@@ -389,7 +394,7 @@
     </div>
   </nav>
 
-  <div id="toast" class="pointer-events-none fixed inset-x-0 z-[60] flex justify-center gutter" style="bottom: calc(5rem + env(safe-area-inset-bottom, 0px))"></div>
+  <div id="toast" aria-live="polite" class="pointer-events-none fixed inset-x-0 z-[60] flex justify-center gutter" style="bottom: calc(5rem + env(safe-area-inset-bottom, 0px))"></div>
 </div>
 
 <datalist id="dl-people"></datalist>
@@ -445,7 +450,15 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 /* ---------------- storage ---------------- */
 const DATA_KEY = 'labstock:data:v2', SET_KEY = 'labstock:settings:v1', UI_KEY = 'labstock:ui:v2';
 const lsGet = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* blocked storage: keep working in memory */ } };
+let storageWarned = false;
+const lsSet = (k, v) => {
+  try { localStorage.setItem(k, JSON.stringify(v)); return true; }
+  catch (e) {
+    // blocked or full storage: the app keeps working in memory, but say so once
+    if (!storageWarned && typeof toast === 'function') { storageWarned = true; setTimeout(() => toast('เบราว์เซอร์นี้เก็บข้อมูลในเครื่องไม่ได้ ข้อมูลที่ยังไม่ได้ส่งเข้าชีตจะหายเมื่อปิดหน้า', 'err'), 0); }
+    return false;
+  }
+};
 
 
 /* ================================================================== *
@@ -607,7 +620,7 @@ const PRESETS = [
   { id: '6m', label: '6 เดือน' },
   { id: '1y', label: '1 ปี' },
   { id: 'all', label: 'ทั้งหมด' },
-  { id: 'custom', label: 'กำหนดวันที่เอง' },
+  { id: 'custom', label: 'กำหนดเอง' },
 ];
 const INV_FILTERS = [
   { id: 'all', label: 'ทั้งหมด' },
@@ -657,7 +670,7 @@ window.addEventListener('hashchange', route);
 /* ================================================================== *
  *  Rendering                                                          *
  * ================================================================== */
-const chip = (on, label, attrs) => `<button type="button" ${attrs} aria-pressed="${on}" class="h-11 shrink-0 whitespace-nowrap rounded-full border px-4 text-sm font-medium ${on ? 'border-accent bg-accent text-accentink' : 'border-line bg-card text-ink'}">${label}</button>`;
+const chip = (on, label, attrs) => `<button type="button" ${attrs} aria-pressed="${on}" class="h-11 shrink-0 whitespace-nowrap rounded-full border px-3 text-sm font-medium sm:px-4 ${on ? 'border-accent bg-accent text-accentink' : 'border-line bg-card text-ink'}">${label}</button>`;
 const badge = (tone, text) => `<span class="inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold ${tone === 'danger' ? 'bg-dangerbg text-danger' : tone === 'warn' ? 'bg-warnbg text-warn' : tone === 'ok' ? 'bg-okbg text-in' : 'bg-soft text-muted'}">${text}</span>`;
 
 function expBadge(m, a) {
@@ -702,11 +715,11 @@ function renderDashboard() {
   $('#range-label').textContent = rangeText(range);
 
   if (ui.material && !eqIndex().has(ui.material)) ui.material = '';
-  $('#mat-filter').innerHTML = eqOptions(ui.material, '', `ทุกรายการในทะเบียน (${state.master.length})`);
+  $('#mat-filter').innerHTML = eqOptions(ui.material, '', `ทุกรายการ (${state.master.length})`);
 
   const bal = balances(range[0], range[1]);
   const s = sumRows(ui.material ? [bal.get(ui.material)] : [...bal.values()]);
-  const unit = ui.material ? unitOf(ui.material) : 'หน่วยรวม';
+  const unit = ui.material ? ' ' + unitOf(ui.material) : '';
 
   const alerts = state.master.filter(m => !ui.material || m.Equipment_ID === ui.material).map(m => ({ m, a: alertOf(m, onHand(m.Equipment_ID)) }));
   const nExp = alerts.filter(x => x.a.exp).length, nMaint = alerts.filter(x => x.a.maint).length, nLow = alerts.filter(x => x.a.low).length;
@@ -719,41 +732,45 @@ function renderDashboard() {
       <p class="mt-2 text-xs ${tone === 'accent' ? 'opacity-90' : 'text-muted'}">${sub}</p>
     </div>`;
   $('#kpis').innerHTML =
-    card('ยอดยกมา', fmtNum(s.open), `IN − OUT ก่อน ${fmtDate(range[0])} (${unit})`) +
-    card('รับเข้าในช่วง', '+' + fmtNum(s.inQ), `ผลรวม IN ในช่วง (${unit})`, 'in') +
-    card('เบิกออกในช่วง', '−' + fmtNum(s.outQ), `ผลรวม OUT ในช่วง (${unit})`, 'out') +
-    card('คงเหลือปัจจุบัน', fmtNum(s.close), `${fmtNum(s.open)} + ${fmtNum(s.inQ)} − ${fmtNum(s.outQ)} ณ ${fmtDate(range[1])}`, 'accent') +
+    card('ยอดยกมา', fmtNum(s.open) + unit, `ก่อน ${fmtDate(range[0])}`) +
+    card('รับเข้าในช่วง', '+' + fmtNum(s.inQ), 'ในช่วงที่เลือก', 'in') +
+    card('เบิกออกในช่วง', '−' + fmtNum(s.outQ), 'ในช่วงที่เลือก', 'out') +
+    card('คงเหลือปัจจุบัน', fmtNum(s.close) + unit, `ณ ${fmtDate(range[1])}`, 'accent') +
     `<button type="button" data-go="stock" data-invf-go="alert" class="col-span-2 rounded-2xl border p-4 text-left lg:col-span-1 ${nUrgent ? 'border-danger/40 bg-dangerbg' : 'border-line bg-card'}">
       <p class="text-sm ${nUrgent ? 'text-danger' : 'text-muted'}">แจ้งเตือนเร่งด่วน</p>
       <p class="num mt-1 text-3xl font-bold leading-none ${nUrgent ? 'text-danger' : ''}">${fmtNum(nUrgent)} <span class="text-base font-semibold">รายการ</span></p>
-      <p class="mt-2 text-xs ${nUrgent ? 'text-danger' : 'text-muted'}">หมดอายุใน ${ALERT_DAYS} วัน ${nExp} · ถึงกำหนดบำรุง ${nMaint} · และต่ำกว่าจุดเตือนอีก ${nLow}</p>
+      <p class="mt-2 text-xs ${nUrgent ? 'text-danger' : 'text-muted'}">ใกล้/หมดอายุ ${nExp} · ถึงกำหนดบำรุง ${nMaint}</p>
     </button>`;
 
   const before = state.tx.filter(t => dayOf(t) < range[0]).length;
   const inRange = state.tx.filter(t => dayOf(t) >= range[0] && dayOf(t) <= range[1]).length;
-  $('#calc-note').innerHTML = `คำนวณสดจาก Transactions ทั้งหมด <b class="num text-ink">${fmtNum(state.tx.length)}</b> แถว (${fmtDate(firstDay())} – ${fmtDate(lastDay())}): ยอดยกมามาจาก <b class="num text-ink">${fmtNum(before)}</b> แถวก่อนวันเริ่มต้น และอยู่ในช่วงนี้ <b class="num text-ink">${fmtNum(inRange)}</b> แถว ไม่มีการลบข้อมูลเก่า`;
+  $('#calc-note').innerHTML = `คำนวณจากรายการรับ-เบิกทั้งหมด <b class="num text-ink">${fmtNum(state.tx.length)}</b> รายการ ตั้งแต่ ${fmtDate(firstDay())}: ก่อนช่วงนี้ ${fmtNum(before)} · ในช่วงนี้ ${fmtNum(inRange)}${ui.material ? '' : ' · ตัวเลขด้านบนนับรวมทุกหน่วย เลือกรายการเพื่อดูทีละหน่วย'}`;
 
-  const act = alerts.filter(x => x.a.any).sort((p, q) => ((p.a.exp || p.a.maint) ? 0 : 1) - ((q.a.exp || q.a.maint) ? 0 : 1));
-  $('#alert-list').innerHTML = act.length ? act.map(({ m, a }) => {
+  // urgent items listed one by one (soonest first); low stock folded into a single link row
+  const urgent = alerts.filter(x => x.a.exp || x.a.maint)
+    .sort((p, q) => Math.min(p.a.exp ? p.a.expDays : 1e9, p.a.maint ? p.a.maintDays : 1e9) - Math.min(q.a.exp ? q.a.expDays : 1e9, q.a.maint ? q.a.maintDays : 1e9));
+  const rowsHtml = urgent.map(({ m, a }) => {
     const tags = [];
     if (a.exp) tags.push(badge('danger', a.expDays < 0 ? `หมดอายุแล้ว ${-a.expDays} วัน` : `หมดอายุในอีก ${a.expDays} วัน`));
-    if (a.maint) tags.push(badge(a.maintDays < 0 ? 'danger' : 'warn', a.maintDays < 0 ? `เลยกำหนดบำรุง ${-a.maintDays} วัน` : `ถึงกำหนดบำรุงใน ${a.maintDays} วัน`));
-    if (a.low) tags.push(badge('warn', `คงเหลือ ${fmtNum(onHand(m.Equipment_ID))} ≤ จุดเตือน ${fmtNum(m.Min_Stock_Alert)}`));
-    return `<li><button type="button" data-detail="${esc(m.Equipment_ID)}" class="flex w-full items-start gap-3 py-3 text-left">
+    if (a.maint) tags.push(badge(a.maintDays < 0 ? 'danger' : 'warn', a.maintDays < 0 ? `เลยกำหนดบำรุง ${-a.maintDays} วัน` : `ถึงกำหนดบำรุงในอีก ${a.maintDays} วัน`));
+    return `<li><button type="button" data-detail="${esc(m.Equipment_ID)}" class="flex min-h-11 w-full items-start gap-3 py-3 text-left">
       <span class="mt-0.5 font-mono text-xs text-muted">${esc(m.Equipment_ID)}</span>
-      <span class="min-w-0 flex-1"><span class="block text-sm font-medium">${esc(m.Material_Name)}</span><span class="mt-1 flex flex-wrap gap-1">${tags.join('')}</span></span>
+      <span class="min-w-0 flex-1"><span class="wrap-any block text-sm font-medium">${esc(m.Material_Name)}</span><span class="mt-1 flex flex-wrap gap-1">${tags.join('')}</span></span>
     </button></li>`;
-  }).join('') : '<li class="py-6 text-center text-sm text-muted">ไม่มีรายการที่ต้องดำเนินการ</li>';
+  });
+  if (nLow) rowsHtml.push(`<li><button type="button" data-go="stock" data-invf-go="low" class="flex min-h-11 w-full items-center justify-between gap-3 py-3 text-left text-sm">
+      <span><b class="num">${nLow}</b> รายการคงเหลือต่ำกว่าจุดเตือน</span><span class="font-semibold text-accent">ดูรายการ</span></button></li>`);
+  $('#alert-list').innerHTML = rowsHtml.join('') || '<li class="py-6 text-center text-sm text-muted">ไม่มีรายการที่ต้องดำเนินการ</li>';
 
   renderCharts(range, bal);
 
   const recent = state.tx.filter(t => dayOf(t) >= range[0] && dayOf(t) <= range[1] && (!ui.material || t.Equipment_ID === ui.material))
-    .sort((a, b) => b.Timestamp.localeCompare(a.Timestamp)).slice(0, 6);
+    .sort((a, b) => b.Timestamp.localeCompare(a.Timestamp)).slice(0, 5);
   $('#recent').innerHTML = recent.length ? recent.map(t => `
     <li class="flex items-center gap-3 py-3">
       <span class="num flex h-10 w-12 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${t.Type === 'OUT' ? 'bg-dangerbg text-out' : 'bg-okbg text-in'}">${t.Type === 'OUT' ? '−' : '+'}${fmtNum(t.Quantity)}</span>
       <div class="min-w-0 flex-1">
-        <p class="truncate text-sm font-medium">${esc(nameOf(t.Equipment_ID))}</p>
+        <p class="truncate text-sm font-medium" title="${esc(nameOf(t.Equipment_ID))}">${esc(nameOf(t.Equipment_ID))}</p>
         <p class="truncate text-xs text-muted">${fmtDate(dayOf(t))} ${t.Timestamp.slice(11, 16)} · ${esc(t.Requester)}${t._pending ? ' · <span class="text-warn">รอส่งเข้าชีต</span>' : ''}</p>
       </div>
     </li>`).join('') : '<li class="py-6 text-center text-sm text-muted">ไม่มีรายการในช่วงนี้</li>';
@@ -791,16 +808,19 @@ function renderCharts(range, bal) {
     if (i < 0) continue;
     (t.Type === 'OUT' ? outs : ins)[i] += Number(t.Quantity) || 0;
   }
+  const anyFlow = ins.some(Boolean) || outs.some(Boolean);
+  $('#flow-empty').hidden = anyFlow;
+  $('#chart-flow').parentElement.hidden = !anyFlow;
   const grid = cssRGB('--line');
   Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
   Chart.defaults.color = cssRGB('--muted');
   const common = { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, boxHeight: 12 } } } };
   if (flowChart) flowChart.destroy();
-  flowChart = new Chart($('#chart-flow'), {
+  flowChart = !anyFlow ? null : new Chart($('#chart-flow'), {
     type: 'bar',
     data: { labels: b.list.map(k => k.label), datasets: [
-      { label: 'รับเข้า (IN)', data: ins, backgroundColor: cssRGB('--in', .85), borderRadius: 4, maxBarThickness: 22 },
-      { label: 'เบิกออก (OUT)', data: outs, backgroundColor: cssRGB('--out', .85), borderRadius: 4, maxBarThickness: 22 },
+      { label: 'รับเข้า', data: ins, backgroundColor: cssRGB('--in', .85), borderRadius: 4, maxBarThickness: 22 },
+      { label: 'เบิกออก', data: outs, backgroundColor: cssRGB('--out', .85), borderRadius: 4, maxBarThickness: 22 },
     ] },
     options: Object.assign({}, common, {
       scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } }, y: { beginAtZero: true, grid: { color: grid }, ticks: { precision: 0 } } },
@@ -813,12 +833,12 @@ function renderCharts(range, bal) {
   $('#chart-top').parentElement.hidden = top.length === 0;
   if (topChart) topChart.destroy();
   if (!top.length) return;
-  const short = s => s.length > 26 ? s.slice(0, 25) + '…' : s;
+  const short = s => s.length > 20 ? s.slice(0, 19) + '…' : s;
   topChart = new Chart($('#chart-top'), {
     type: 'bar',
     data: { labels: top.map(([id]) => short(nameOf(id))), datasets: [{ label: 'เบิกออก', data: top.map(([, r]) => r.outQ), backgroundColor: cssRGB('--out', .85), borderRadius: 4, maxBarThickness: 26 }] },
     options: Object.assign({}, common, {
-      indexAxis: 'y',
+      indexAxis: 'y', layout: { padding: { left: 4 } },
       plugins: { legend: { display: false }, tooltip: { callbacks: { title: items => `${top[items[0].dataIndex][0]} · ${nameOf(top[items[0].dataIndex][0])}` } } },
       scales: { x: { beginAtZero: true, grid: { color: grid }, ticks: { precision: 0 } }, y: { grid: { display: false }, ticks: { font: { size: 11 } } } },
     }),
@@ -850,12 +870,13 @@ function renderStock() {
   if ($('#inv-search').value !== ui.search) $('#inv-search').value = ui.search;
   const rows = stockRows();
   $('#inv-count').textContent = `${rows.length} รายการ`;
-  const empty = '<p class="py-10 text-center text-sm text-muted">ไม่พบรายการที่ตรงกับเงื่อนไข</p>';
+  const empty = state.master.length ? '<p class="py-10 text-center text-sm text-muted">ไม่พบรายการที่ตรงกับคำค้นหรือตัวกรองนี้</p>'
+    : '<p class="py-10 text-center text-sm text-muted">ยังไม่มีอุปกรณ์ในทะเบียน เพิ่มได้ที่แท็บทะเบียน</p>';
   const repText = r => r.rep.length ? `${r.rep.length} ครั้ง${r.openRep ? ` · <span class="text-warn">ค้าง ${r.openRep}</span>` : ''}` : '<span class="text-muted">ไม่มี</span>';
   $('#inv-cards').innerHTML = rows.length ? rows.map(r => `
     <li><button type="button" data-detail="${esc(r.m.Equipment_ID)}" class="w-full rounded-2xl border ${r.a.any ? 'border-danger/40' : 'border-line'} bg-card p-4 text-left">
       <div class="flex items-start justify-between gap-2">
-        <div class="min-w-0"><p class="font-mono text-xs text-muted">${esc(r.m.Equipment_ID)} · ${esc(r.m.Category)}</p><p class="font-semibold leading-snug">${esc(r.m.Material_Name)}</p></div>
+        <div class="min-w-0"><p class="font-mono text-xs text-muted">${esc(r.m.Equipment_ID)} · ${esc(r.m.Category)}</p><p class="wrap-any font-semibold leading-snug">${esc(r.m.Material_Name)}</p></div>
         <p class="num shrink-0 text-right"><span class="block text-2xl font-bold leading-none ${r.a.low ? 'text-warn' : ''}">${fmtNum(r.close)}</span><span class="text-xs text-muted">${esc(r.m.Unit)}</span></p>
       </div>
       <dl class="num mt-3 grid grid-cols-3 gap-2 text-center text-sm">
@@ -885,9 +906,11 @@ function renderStock() {
 }
 
 /* ---------------- item ledger ---------------- */
+let detailOpener = null;
 function openDetail(id) {
   const m = eqIndex().get(id);
   if (!m) return;
+  detailOpener = document.activeElement;
   const range = getRange(), r = balances(range[0], range[1]).get(id), a = alertOf(m, onHand(id));
   const lines = state.tx.filter(t => t.Equipment_ID === id && dayOf(t) >= range[0] && dayOf(t) <= range[1]).sort((x, y) => x.Timestamp.localeCompare(y.Timestamp));
   const priorCount = state.tx.filter(t => t.Equipment_ID === id && dayOf(t) < range[0]).length;
@@ -933,7 +956,12 @@ function openDetail(id) {
   document.body.style.overflow = 'hidden';
   $('#detail-close').focus();
 }
-function closeDetail() { $('#detail').hidden = true; document.body.style.overflow = ''; }
+function closeDetail() {
+  if ($('#detail').hidden) return;
+  $('#detail').hidden = true; document.body.style.overflow = '';
+  if (detailOpener && document.contains(detailOpener)) detailOpener.focus();
+  detailOpener = null;
+}
 
 /* ---------------- entry forms ---------------- */
 function renderEntry() {
@@ -945,10 +973,12 @@ function renderEntry() {
   $$('[data-ftab]').forEach(b => {
     const on = b.dataset.ftab === ui.formTab;
     b.className = `h-12 rounded-xl font-semibold ${on ? 'bg-card text-accent shadow-sm' : 'text-muted'}`;
-    b.setAttribute('aria-selected', on);
+    b.setAttribute('aria-pressed', on);
   });
-  $('#form-stock').hidden = ui.formTab !== 'stock';
-  $('#form-repair').hidden = ui.formTab !== 'repair';
+  const noItems = !state.master.length;
+  $('#no-items').hidden = !noItems;
+  $('#form-stock').hidden = noItems || ui.formTab !== 'stock';
+  $('#form-repair').hidden = noItems || ui.formTab !== 'repair';
   $('#repair-list-wrap').hidden = ui.formTab !== 'repair';
 
   const keep = ui.preselect || $('#f-eq').value;
@@ -968,7 +998,7 @@ function renderEntry() {
   const list = [...state.repairs].sort((a, b) => b.Timestamp.localeCompare(a.Timestamp));
   $('#repair-list').innerHTML = list.length ? list.map(r => `
     <li class="space-y-2 py-3">
-      <div class="flex items-start justify-between gap-2"><p class="min-w-0 font-medium leading-snug"><span class="font-mono text-xs text-muted">${esc(r.Equipment_ID)}</span> ${esc(nameOf(r.Equipment_ID))}</p>${statusPill(r.Status)}</div>
+      <div class="flex items-start justify-between gap-2"><p class="wrap-any min-w-0 font-medium leading-snug"><span class="font-mono text-xs text-muted">${esc(r.Equipment_ID)}</span> ${esc(nameOf(r.Equipment_ID))}</p>${statusPill(r.Status)}</div>
       <p class="text-sm">${esc(r.Issue_Description)}</p>
       <div class="flex flex-wrap items-center justify-between gap-2">
         <p class="text-xs text-muted">${fmtDate(dayOf(r))} · แจ้งโดย ${esc(r.Reporter)}${r._pending || r._pendingStatus ? ' · <span class="text-warn">รอส่งเข้าชีต</span>' : ''}</p>
@@ -1010,7 +1040,7 @@ function renderRegistry() {
     return `<li class="flex items-center gap-3 py-3">
       <button type="button" data-detail="${esc(m.Equipment_ID)}" class="min-w-0 flex-1 text-left">
         <span class="font-mono text-xs text-muted">${esc(m.Equipment_ID)} · ${esc(m.Category)} · ${esc(m.Unit)}${m._pending ? ' · <span class="text-warn">รอส่งเข้าชีต</span>' : ''}</span>
-        <span class="block text-sm font-medium leading-snug">${esc(m.Material_Name)}</span>
+        <span class="wrap-any block text-sm font-medium leading-snug">${esc(m.Material_Name)}</span>
         <span class="mt-1 flex flex-wrap gap-1">${a.exp ? badge('danger', 'ใกล้/หมดอายุ') : ''}${a.maint ? badge('warn', 'ถึงกำหนดบำรุง') : ''}${a.low ? badge('warn', 'ต่ำกว่าจุดเตือน') : ''}</span>
       </button>
       <button type="button" data-edit-eq="${esc(m.Equipment_ID)}" class="h-11 shrink-0 rounded-xl border border-line px-3 text-sm font-semibold">แก้ไข</button>
@@ -1046,19 +1076,20 @@ function renderSetup() {
 function renderSync() {
   const c = $('#sync-chip'), n = pendingCount();
   let text, cls;
-  if (!settings.url) { text = 'โหมดทดลอง'; cls = 'border-line text-muted'; }
+  if (!settings.url) { text = 'ข้อมูลตัวอย่าง'; cls = 'border-line text-muted'; }
   else if (syncing) { text = 'กำลังซิงก์…'; cls = 'border-accent text-accent'; }
   else if (n) { text = `รอส่ง ${n}`; cls = 'border-warn bg-warnbg text-warn'; }
   else { text = 'ซิงก์แล้ว'; cls = 'border-in bg-okbg text-in'; }
   c.textContent = text;
-  c.className = `shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${cls}`;
+  c.setAttribute('aria-label', `สถานะข้อมูล: ${text} (เปิดหน้าตั้งค่า)`);
+  c.className = `h-11 shrink-0 rounded-full border px-3 text-xs font-semibold ${cls}`;
 }
 
 let toastTimer;
 function toast(msg, tone = 'ok') {
   const cls = tone === 'err' ? 'bg-danger text-white' : tone === 'warn' ? 'bg-warn text-white' : 'bg-ink text-bg';
-  $('#toast').innerHTML = `<div role="status" class="toast-in pointer-events-auto max-w-md rounded-xl px-4 py-3 text-sm font-medium shadow-lg ${cls}">${esc(msg)}</div>`;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').innerHTML = '', 4000);
+  $('#toast').innerHTML = `<div role="${tone === 'ok' ? 'status' : 'alert'}" class="toast-in pointer-events-auto max-w-md rounded-xl px-4 py-3 text-sm font-medium shadow-lg ${cls}">${esc(msg)}</div>`;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').innerHTML = '', tone === 'ok' ? 4000 : 7000);
 }
 
 /* ================================================================== *
@@ -1076,7 +1107,7 @@ async function api(payload, query) {
     // text/plain keeps this a "simple" request: Apps Script cannot answer a CORS preflight
     res = await fetch(settings.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ key: settings.key }, payload)) });
   }
-  } catch (e) { throw new Error('ติดต่อเซิร์ฟเวอร์ไม่ได้ (ออฟไลน์?) จะส่งให้อัตโนมัติเมื่อซิงก์ครั้งถัดไป'); }
+  } catch (e) { throw new Error('ไม่มีอินเทอร์เน็ตหรือเซิร์ฟเวอร์ไม่ตอบ'); }
   let j;
   try { j = await res.json(); } catch (e) { throw new Error('เซิร์ฟเวอร์ไม่ได้ตอบกลับเป็น JSON ตรวจสอบว่า Deploy เป็น Web App และให้ "ทุกคน" เข้าถึงได้'); }
   if (!j.ok) throw new Error(j.error || 'เซิร์ฟเวอร์ตอบกลับข้อผิดพลาด');
@@ -1134,7 +1165,7 @@ async function syncAll({ quiet } = {}) {
     save(); ok = true;
     if (!quiet) toast(`ซิงก์สำเร็จ: ทะเบียน ${j.master.length} · รับ-เบิกใหม่ ${j.tx.length} แถว (รวม ${j.txTotal}) · แจ้งซ่อม ${j.repairs.length}`);
   } catch (e) {
-    toast('ซิงก์ไม่สำเร็จ: ' + e.message, 'err');
+    toast('ซิงก์ไม่สำเร็จ: ' + e.message + ' รายการที่ยังไม่ได้ส่งยังอยู่ในเครื่อง', 'err');
   } finally { syncing = false; render(); }
   return ok;
 }
@@ -1146,7 +1177,15 @@ async function sendNow(fn) {
 function resultToast(res, okMsg) {
   if (res === 'local' || res === 'sent') toast(okMsg + (res === 'sent' ? ' (บันทึกลง Google Sheets แล้ว)' : ''));
   else if (res === 'queued') toast(okMsg + ' (รอส่งเข้าชีต)', 'warn');
-  else toast(`บันทึกในเครื่องแล้ว แต่ส่งเข้าชีตไม่สำเร็จ: ${res}`, 'warn');
+  else toast(`บันทึกไว้ในเครื่องแล้ว แต่ยังไม่ได้ส่งเข้าชีต (${res}) กดปุ่ม "รอส่ง" มุมขวาบนเพื่อลองอีกครั้ง`, 'warn');
+}
+
+async function busy(form, label, fn) {
+  const btn = form.querySelector('[type=submit]');
+  if (btn.disabled) return;
+  const text = btn.textContent;
+  btn.disabled = true; btn.textContent = label;
+  try { await fn(); } finally { btn.disabled = false; if (btn.textContent === label) btn.textContent = text; }
 }
 
 /* ================================================================== *
@@ -1193,7 +1232,16 @@ document.addEventListener('click', e => {
     $('#stock-error').hidden = true;
   }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#detail').hidden) closeDetail(); });
+document.addEventListener('keydown', e => {
+  if ($('#detail').hidden) return;
+  if (e.key === 'Escape') { closeDetail(); return; }
+  if (e.key === 'Tab') { // keep focus inside the sheet
+    const f = $$('#detail-panel button, #detail-panel [href], #detail-panel select, #detail-panel input').filter(x => x.offsetParent);
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+  }
+});
 $('#c-start').addEventListener('change', e => { ui.cStart = e.target.value; saveUI(); renderDashboard(); });
 $('#c-end').addEventListener('change', e => { ui.cEnd = e.target.value; saveUI(); renderDashboard(); });
 $('#mat-filter').addEventListener('change', e => { ui.material = e.target.value; renderDashboard(); });
@@ -1207,13 +1255,14 @@ $('#f-eq-q').addEventListener('input', e => {
   updateEqCard();
 });
 
-$('#form-stock').addEventListener('submit', async e => {
-  e.preventDefault();
+$('#form-stock').addEventListener('submit', e => { e.preventDefault(); busy(e.currentTarget, 'กำลังบันทึก…', () => submit_form_stock()); });
+async function submit_form_stock() {
   const err = $('#stock-error'), show = m => { err.textContent = m; err.hidden = false; };
   err.hidden = true;
-  const id = $('#f-eq').value, qty = parseInt($('#f-qty').value, 10), date = $('#f-date').value, who = $('#f-person').value.trim();
+  const id = $('#f-eq').value, qty = Number($('#f-qty').value), date = $('#f-date').value, who = $('#f-person').value.trim();
   if (!eqIndex().has(id)) return show('กรุณาเลือกอุปกรณ์ / วัสดุจากทะเบียน');
-  if (!(qty > 0)) return show('จำนวนต้องเป็นตัวเลขมากกว่า 0');
+  if (!Number.isInteger(qty) || qty < 1) return show('จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป');
+  if (qty > 100000) return show('จำนวนมากผิดปกติ ตรวจสอบอีกครั้ง (สูงสุด 100,000 ต่อรายการ)');
   if (!isISO(date)) return show('กรุณาเลือกวันที่ทำรายการ');
   if (date > today()) return show('วันที่ทำรายการต้องไม่เกินวันนี้');
   if (!who) return show('กรุณากรอกชื่อผู้เบิก / ผู้บันทึก');
@@ -1226,10 +1275,10 @@ $('#form-stock').addEventListener('submit', async e => {
   resultToast(res, `${t.Type === 'IN' ? 'รับเข้า' : 'เบิกออก'} ${fmtNum(qty)} ${unitOf(t.Equipment_ID)} · ${nameOf(t.Equipment_ID)}`);
   $('#f-note').value = ''; $('#f-qty').value = 1;
   renderEntry();
-});
+}
 
-$('#form-repair').addEventListener('submit', async e => {
-  e.preventDefault();
+$('#form-repair').addEventListener('submit', e => { e.preventDefault(); busy(e.currentTarget, 'กำลังบันทึก…', () => submit_form_repair()); });
+async function submit_form_repair() {
   const err = $('#repair-error'), show = m => { err.textContent = m; err.hidden = false; };
   err.hidden = true;
   const id = $('#r-eq').value, date = $('#r-date').value, issue = $('#r-issue').value.trim(), who = $('#r-reporter').value.trim();
@@ -1244,7 +1293,7 @@ $('#form-repair').addEventListener('submit', async e => {
   resultToast(res, `บันทึกใบแจ้งซ่อม ${r.Repair_ID}`);
   $('#r-issue').value = ''; ui.rStatus = STATUSES[0];
   renderEntry();
-});
+}
 
 $('#repair-list').addEventListener('change', async e => {
   const sel = e.target.closest('[data-repair-id]');
@@ -1259,14 +1308,14 @@ $('#repair-list').addEventListener('change', async e => {
   renderEntry();
 });
 
-$('#form-eq').addEventListener('submit', async e => {
-  e.preventDefault();
+$('#form-eq').addEventListener('submit', e => { e.preventDefault(); busy(e.currentTarget, 'กำลังบันทึก…', () => submit_form_eq()); });
+async function submit_form_eq() {
   const err = $('#eq-error'), show = m => { err.textContent = m; err.hidden = false; };
   err.hidden = true;
   const name = $('#e-name').value.trim().replace(/\s+/g, ' '), unit = $('#e-unit').value.trim(), min = Number($('#e-min').value || 0);
   if (!name) return show('กรุณากรอกชื่อวัสดุ / อุปกรณ์');
   if (!unit) return show('กรุณากรอกหน่วยนับ');
-  if (!(min >= 0) || !Number.isInteger(min)) return show('จุดเตือนสต็อกต้องเป็นจำนวนเต็มตั้งแต่ 0');
+  if (!(min >= 0) || !Number.isInteger(min) || min > 100000) return show('จุดเตือนสต็อกต้องเป็นจำนวนเต็มตั้งแต่ 0 ถึง 100,000');
   const dupe = state.master.find(m => m.Material_Name.toLowerCase() === name.toLowerCase() && m.Equipment_ID !== ui.editId);
   if (dupe) return show(`มีชื่อนี้ในทะเบียนแล้ว: ${dupe.Equipment_ID}`);
   const fields = { Material_Name: name, Category: ui.eCat, Unit: unit, Min_Stock_Alert: min, Expiration_Date: $('#e-exp').value, Next_Maintenance_Date: $('#e-maint').value };
@@ -1286,7 +1335,7 @@ $('#form-eq').addEventListener('submit', async e => {
   const res = await sendNow(() => sendEquipment(m));
   resultToast(res, `เพิ่ม ${m.Equipment_ID} · ${m.Material_Name} เข้าทะเบียนแล้ว`);
   fillEqForm(null); renderRegistry();
-});
+}
 $('#eq-cancel').addEventListener('click', () => { ui.editId = ''; fillEqForm(null); renderRegistry(); });
 
 function setupMsg(text, tone) {
@@ -1366,10 +1415,10 @@ function buildReport() {
   return { wb, name: `รายงานคงคลัง_${range[0]}_ถึง_${range[1]}.xlsx` };
 }
 $('#btn-export').addEventListener('click', () => {
-  if (!window.XLSX) return toast('โหลดไลบรารี Excel ไม่สำเร็จ ตรวจสอบอินเทอร์เน็ต', 'err');
+  if (!window.XLSX) return toast('ส่งออก Excel ไม่ได้ เพราะโหลดตัวสร้างไฟล์ไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วเปิดหน้าใหม่', 'err');
   const { wb, name } = buildReport();
   XLSX.writeFile(wb, name);
-  toast('ส่งออกรายงาน Excel แล้ว');
+  toast(`ดาวน์โหลด ${name} แล้ว`);
 });
 
 /* ================================================================== *
