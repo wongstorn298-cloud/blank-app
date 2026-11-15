@@ -1,6 +1,15 @@
 /**
- * Google Apps Script backend — คลังน้ำยาแล็บ DNA (v2)
+ * Google Apps Script — ระบบคลังน้ำยาและบำรุงรักษาเครื่องมือ
+ * กลุ่มงานตรวจชีววิทยาและดีเอ็นเอ ศูนย์พิสูจน์หลักฐาน 3
  * =====================================================
+ * This one script does two jobs:
+ *   1. Opening the Web App URL with no parameters serves the app itself
+ *      (the HTML file named "index" in this project). Pages served this way
+ *      talk to the sheet through google.script.run → apiCall(), so phones
+ *      need no URL or key setup.
+ *   2. The same URL is also a JSON API (below) for a copy of index.html
+ *      hosted somewhere else.
+ *
  * Three sheets, three roles:
  *
  *   Equipment_Master  one row per item (the only sheet whose rows are edited)
@@ -11,7 +20,8 @@
  * Transactions for whatever date range is asked, so old rows never need to be
  * deleted to keep the numbers right.
  *
- * Endpoints (deploy as Web App, see README.md):
+ * JSON API (deploy as Web App, see MANUAL-TH.md):
+ *   GET  (no action)             the app page
  *   GET  ?action=sync&txFrom=N   master + repairs + Transactions rows after the first N
  *   GET  ?action=report&start=YYYY-MM-DD&end=YYYY-MM-DD   per-item balances, computed here
  *   GET  ?action=ping
@@ -20,8 +30,11 @@
  * POST bodies are sent as text/plain JSON so the browser skips the CORS preflight.
  */
 
-// รหัสลับ ต้องตรงกับช่อง "รหัสลับ" ในหน้าตั้งค่าของแอป (เว้นว่าง '' เพื่อปิดการตรวจ)
+// รหัสลับสำหรับเรียก JSON API จากที่อื่น (เช่น index.html ที่ฝากไว้บนเว็บอื่น)
+// ไม่มีผลกับแอปที่เปิดจากลิงก์ Web App โดยตรง  เว้นว่าง '' เพื่อปิดการตรวจ
 const API_KEY = '';
+const APP_TITLE = 'ระบบคลังน้ำยาและบำรุงรักษาเครื่องมือ';
+const WRITE_ACTIONS = ['addEquipment', 'updateEquipment', 'addTx', 'addRepair', 'updateRepair'];
 
 const SHEETS = {
   master: {
@@ -47,49 +60,84 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?([+-]\d{2}:\d{2}|Z)?$/;
 const EDITABLE_MASTER = ['Material_Name', 'Category', 'Unit', 'Min_Stock_Alert', 'Expiration_Date', 'Next_Maintenance_Date'];
 
-/** Run once from the editor: creates the three sheets with headers. */
+/**
+ * Run once from the editor after importing the starter spreadsheet (or on an
+ * empty one): creates any missing sheet, checks the headers, and formats the
+ * id/date/timestamp columns as plain text.
+ */
 function setup() {
-  Object.keys(SHEETS).forEach(function (k) { sheet_(k); });
+  Object.keys(SHEETS).forEach(function (k) {
+    const def = SHEETS[k], sh = sheet_(k);
+    const head = sh.getRange(1, 1, 1, def.cols.length).getValues()[0].map(String);
+    if (head.join('|') !== def.cols.join('|')) throw new Error('หัวตารางของชีต ' + def.name + ' ไม่ตรง ต้องเป็น: ' + def.cols.join(', '));
+    textFormat_(sh, def);
+  });
+  Logger.log('พร้อมใช้งาน: ' + Object.keys(SHEETS).map(function (k) { return SHEETS[k].name + ' ' + dataRows_(k) + ' แถว'; }).join(', '));
 }
 
 /* ================================================================== */
 
 function doGet(e) {
+  const p = (e && e.parameter) || {};
+  if (!p.action) {
+    return HtmlService.createHtmlOutputFromFile('index')
+      .setTitle(APP_TITLE)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+  }
   try {
-    const p = (e && e.parameter) || {};
     checkKey_(p.key);
-    switch (p.action || 'sync') {
-      case 'ping': return json_({ ok: true });
-      case 'sync': return json_(sync_(Math.max(0, parseInt(p.txFrom, 10) || 0)));
-      case 'report': return json_(report_(p.start, p.end));
-      default: throw new Error('ไม่รู้จักคำสั่ง: ' + p.action);
-    }
+    if (WRITE_ACTIONS.indexOf(p.action) >= 0) throw new Error('คำสั่งเขียนข้อมูลต้องส่งแบบ POST');
+    return json_(route_(p.action, p, {}));
   } catch (err) {
     return json_({ ok: false, error: String(err.message || err) });
   }
 }
 
 function doPost(e) {
-  const lock = LockService.getScriptLock();
-  let locked = false;
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     checkKey_(body.key);
-    lock.waitLock(20000);
-    locked = true;
-    const d = body.data || {};
-    switch (body.action) {
-      case 'addEquipment': return json_(addEquipment_(d));
-      case 'updateEquipment': return json_(updateEquipment_(d));
-      case 'addTx': return json_(addTx_(d));
-      case 'addRepair': return json_(addRepair_(d));
-      case 'updateRepair': return json_(updateRepair_(d));
-      default: throw new Error('ไม่รู้จักคำสั่ง: ' + body.action);
-    }
+    return json_(route_(body.action, body, body.data || {}));
   } catch (err) {
     return json_({ ok: false, error: String(err.message || err) });
+  }
+}
+
+/**
+ * Called by the app page through google.script.run. Whoever can open the
+ * Web App URL can already use the app, so no key is checked here.
+ */
+function apiCall(req) {
+  try {
+    req = req || {};
+    return route_(req.action, req, req.data || {});
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+}
+
+/** One router for doGet, doPost and apiCall. Writes run under a script lock. */
+function route_(action, p, d) {
+  if (WRITE_ACTIONS.indexOf(action) < 0) {
+    switch (action) {
+      case 'ping': return { ok: true };
+      case 'sync': return sync_(Math.max(0, parseInt(p.txFrom, 10) || 0));
+      case 'report': return report_(p.start, p.end);
+      default: throw new Error('ไม่รู้จักคำสั่ง: ' + action);
+    }
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    switch (action) {
+      case 'addEquipment': return addEquipment_(d);
+      case 'updateEquipment': return updateEquipment_(d);
+      case 'addTx': return addTx_(d);
+      case 'addRepair': return addRepair_(d);
+      default: return updateRepair_(d);
+    }
   } finally {
-    if (locked) lock.releaseLock();
+    lock.releaseLock();
   }
 }
 
@@ -254,12 +302,16 @@ function sheet_(key) {
     const n = def.cols.length;
     sh.getRange(1, 1, 1, n).setValues([def.cols]).setFontWeight('bold').setBackground('#e1f0ef');
     sh.setFrozenRows(1);
-    // ids, dates and timestamps stay plain text so the sheet locale cannot reformat them
-    def.cols.forEach(function (c, i) {
-      if (def.numeric.indexOf(c) < 0) sh.getRange(2, i + 1, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@');
-    });
+    textFormat_(sh, def);
   }
   return sh;
+}
+
+/** ids, dates and timestamps stay plain text so the sheet locale cannot reformat them */
+function textFormat_(sh, def) {
+  def.cols.forEach(function (c, i) {
+    if (def.numeric.indexOf(c) < 0) sh.getRange(2, i + 1, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@');
+  });
 }
 
 function dataRows_(key) {
