@@ -200,7 +200,7 @@ document.addEventListener('visibilitychange', () => { const s = cur(); if (!docu
 /* เมนูของแม่แบบ lab ขึ้นกับแท็บที่มีจริง (ชีต Lot พัสดุ = เมนู Lot อย่างเดียว) */
 const navOf = tpl => !tpl ? [] : TPL[tpl].nav.map(n => n[0]).filter(v => tpl !== 'lab' || !S.M || !S.M.has || S.M.has[v === 'overview' ? 'cases' : v]);
 const homeView = () => navOf(S.tpl)[0] || 'sources';
-function resetView(tpl){ S.fy = null; S.yr = 0; S.lotQ = ''; S.lotLimit = 25; S.pendLimit = 25; S.pendF = 'all'; S.cm = 0; S.drill = null; S.prevKpi = {}; if (!validViews(tpl).includes(S.view)) S.view = homeView(); }
+function resetView(tpl){ S.fy = null; S.yr = 0; S.lotQ = ''; S.lotLimit = 25; S.pendLimit = 25; S.pendF = 'all'; S.cm = 0; S.drill = null; S.prevKpi = {}; restoreSel(tpl); if (!validViews(tpl).includes(S.view)) S.view = homeView(); }
 async function activate(id){
   clearTimeout(pollT); S.gen++; S.busy = false; S.active = id; S.sig = ''; persist();
   const s = cur(); if (s) { s.state = 'busy'; s.err = ''; } S.M = null; S.tpl = null; S.error = ''; render();

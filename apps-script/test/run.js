@@ -1089,7 +1089,8 @@ fs.writeFileSync(path.join(OUT, 'denied.html'), load({ sheets, email: 'stranger@
       call(g, OWNER, 'adminSaveSource', { link: link(XID.cases2), name: 'คดีชุด 2' });
       for (const [e, n, t] of [['staff2@example.org', 'เจ้าหน้าที่ ค', 'ห้องปฏิบัติการ'], ['staff3@example.org', 'เจ้าหน้าที่ ง', '']]) call(g, OWNER, 'adminSaveUser', { email: e, name: n, note: t });
       return g; } };
-    if (ui) await ui.run({ results, OUT, EXP, statsOf, botSamples: { pending: pendingSample }, live });
+    const summ = (start, end) => plain(S.summarize(records, { start, end }));   // ช่วงที่กำหนดเองบนหน้าเว็บต้องตรงกับ Stats.gs
+    if (ui) await ui.run({ results, OUT, EXP, statsOf, botSamples: { pending: pendingSample }, live, summ });
   }
   const pass = results.filter(r => r.pass).length;
   for (const r of results) console.log(`${r.pass ? 'PASS' : 'FAIL'}  [${r.group}] ${r.name} — ${r.actual}`);

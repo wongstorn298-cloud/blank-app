@@ -10,7 +10,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const JSZIP = (() => { try { return require.resolve('jszip/dist/jszip.min.js', { paths: [path.dirname(require.resolve('playwright')), '/opt/node-tools/node_modules'] }); } catch (e) { return null; } })();
 const BASE = 'https://dash.test/';
 
-async function run({ results, OUT, EXP, statsOf, botSamples, live }) {
+async function run({ results, OUT, EXP, statsOf, botSamples, live, summ }) {
   const SHOTS = process.env.SHOT_DIR || path.join(OUT, 'shots');
   fs.mkdirSync(SHOTS, { recursive: true });
   const books = JSON.parse(fs.readFileSync(path.join(OUT, 'books.json'), 'utf8'));
@@ -21,7 +21,7 @@ async function run({ results, OUT, EXP, statsOf, botSamples, live }) {
   const issues = [];   // console error / pageerror / คำขอที่ไม่ได้ตั้งใจ
   const requested = [];
   async function newPage(opts = {}) {
-    const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1440, height: 900 }, deviceScaleFactor: opts.dpr || 1.5, colorScheme: opts.scheme || 'light' });
+    const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1440, height: 900 }, deviceScaleFactor: opts.dpr || 1.5, colorScheme: opts.scheme || 'light', timezoneId: opts.tz });
     await ctx.route('**/*', async route => {
       const u = route.request().url(); requested.push(u);
       if (u === BASE) return route.fulfill({ contentType: 'text/html; charset=utf-8', body: fs.readFileSync(path.join(ROOT, 'apps-script', 'Index.html')) });
@@ -188,6 +188,168 @@ async function run({ results, OUT, EXP, statsOf, botSamples, live }) {
       const t = await d.textContent('body'); if (!t.includes('stranger@example.org') || !t.includes('ไม่มีสิทธิ์เข้าถึง')) throw new Error(t);
     });
     await d.context().close();
+
+    // ---------- ช่วงเวลาที่เลือกเอง (ชีตคดี: ช่วงวันที่รับ · ชีตงานตรวจ: ช่วงเดือน) ----------
+    {
+      const RSHOT = process.env.RANGE_SHOT_DIR || SHOTS; fs.mkdirSync(RSHOT, { recursive: true });
+      const rshot = async (page, name, full = true) => { const f = path.join(RSHOT, name + '.png'); await page.screenshot({ path: f, fullPage: full }); shots.push(f); };
+      const TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+      const thD = ymd => { const [y, m, d] = ymd.split('-').map(Number); return `${d} ${TH[m - 1]} ${y + 543}`; };
+      const rl = (s, e) => s === e ? thD(s) : thD(s) + ' – ' + thD(e);
+      // วันที่รับต่ำสุด/สูงสุดของแถวที่นับในสถิติ (ใช้ตรวจการตัดช่วง)
+      const ct = books.cases.tabs['ข้อมูลคดี'], ch = ct[0], ci = ch.findIndex(x => String(x).startsWith('วันที่รับ')), cc = ch.findIndex(x => String(x).startsWith('นับในสถิติ'));
+      const ser = ct.slice(1).filter(r => typeof r[ci] === 'number' && r[cc] !== 0).map(r => r[ci]);
+      const ymdS = x => new Date(Math.round((x - 25569) * 864e5)).toISOString().slice(0, 10), DMIN = ymdS(Math.min(...ser)), DMAX = ymdS(Math.max(...ser));
+      const openPanel = async page => { if (!(await page.$('#rngPanel:not([hidden])'))) { await page.click('#rngBtn'); await page.waitForSelector('#rngPanel:not([hidden])'); } };
+      const fillRange = async (page, s, e) => { await openPanel(page);
+        for (const [id, v] of [['rs', s], ['re', e]]) { const [y, m, d] = v.split('-').map(Number);
+          await page.selectOption(`#${id}Y`, String(y)); await page.selectOption(`#${id}M`, String(m)); await page.selectOption(`#${id}D`, String(d)); } };
+      const setRange = async (page, s, e) => { await fillRange(page, s, e); await page.click('#rngPanel [data-rng="apply"]'); await page.waitForSelector('#rngPanel', { state: 'hidden' }); await settle(page); };
+      const hb = (page, title) => page.$$eval('section.card', (cs, t) => { const c = cs.find(x => x.querySelector('h2')?.textContent === t);
+        return c ? [...c.querySelectorAll('.hb li')].map(li => [li.querySelector('.hb-l').getAttribute('title'), +li.querySelector('b').textContent.replace(/[^\d]/g, '')]) : null; }, title);
+      const sub = (page, title) => page.$$eval('section.card', (cs, t) => { const c = cs.find(x => (x.querySelector('h2')?.textContent || '').startsWith(t)); return c ? c.querySelector('.card-h p')?.textContent || '' : null; }, title);
+      const pressed = page => page.$$eval('#chips .chip[aria-pressed="true"]', b => b.map(x => x.textContent));
+
+      const r = await newPage({ tz: 'Asia/Bangkok' });
+      await r.clock.setFixedTime(new Date('2026-11-16T10:00:00+07:00'));
+      await r.goto(BASE + '#overview'); await r.waitForSelector('[data-flash="c_n"]'); await settle(r);
+      await openPanel(r); await rshot(r, 'range-control-open', false);
+
+      for (const [s, e, what] of [['2024-11-15', '2025-02-10', 'ข้ามปีปฏิทิน (88 วัน → รายเดือน)'], ['2025-03-05', '2025-03-14', '10 วัน (รายวัน)'], ['2023-04-01', '2023-09-30', '6 เดือนเต็ม (ข้ามปีงบ)']]) {
+        const st = summ(s, e);
+        await check(`ช่วงที่กำหนดเอง ${s} ถึง ${e}: ${what} = Stats.summarize`, `คดี ${st.cases}, ของกลาง ${st.evidence}, ประเภท ${st.byType.length}, ผู้ตรวจ ${st.byOfficer.length} ตรงกัน · หัวการ์ดบอกช่วง`, async () => {
+          await go(r, '#overview'); await setRange(r, s, e);
+          eq(num(await r.textContent('[data-flash="c_n"]')), st.cases, 'คดี'); eq(num(await r.textContent('[data-flash="c_i"]')), st.evidence, 'ของกลาง');
+          const L = rl(s, e); if ((await r.textContent('#rngBtn')).trim() !== L) throw new Error('ปุ่มช่วง: ' + (await r.textContent('#rngBtn')));
+          for (const t of ['ไฮไลต์', '10 คดีที่มีของกลางมากที่สุด']) { const p = await sub(r, t); if (!p || !p.includes(L)) throw new Error(`หัวการ์ด ${t}: ${p}`); }
+          const unit = e === '2025-03-14' ? 'วัน' : 'เดือน', tb = await r.$$eval('section.card', (cs, u) => { const c = cs.find(x => x.querySelector('h2')?.textContent === 'สถิติราย' + u);
+            return c ? [...c.querySelectorAll('tbody tr')].map(tr => +tr.cells[1].textContent.replace(/[^\d]/g, '') || 0) : null; }, unit);
+          if (!tb) throw new Error('ไม่พบตาราง สถิติราย' + unit); eq(tb.reduce((a, b) => a + b, 0), st.cases, 'ผลรวมตารางราย' + unit);
+          if (unit === 'วัน') eq(tb.length, 10, 'จำนวนวันในกราฟ');
+          const a = await axis(r); if (a.some(x => x.overlaps)) throw new Error('ป้ายแกนซ้อน ' + JSON.stringify(a));
+          await go(r, '#area');
+          const ty = Object.fromEntries(await hb(r, 'ประเภทคดี')), of = Object.fromEntries(await hb(r, 'ผู้ตรวจ'));
+          for (const x of st.byType) eq(ty[x.name], x.cases, 'ประเภทคดี ' + x.name); eq(Object.keys(ty).length, st.byType.length, 'จำนวนประเภท');
+          for (const o of st.byOfficer) eq(of[o.name], o.cases, 'ผู้ตรวจ ' + o.name); eq(Object.keys(of).length, st.byOfficer.length, 'จำนวนผู้ตรวจ');
+          if (!(await sub(r, 'ประเภทคดี')).includes(L)) throw new Error('หัวการ์ดประเภทคดีไม่บอกช่วง');
+          await go(r, '#monthly');
+          const ex = await r.$$eval('section.card', cs => { const c = cs.find(x => (x.querySelector('h2')?.textContent || '').startsWith('ผู้ตรวจแต่ละคนได้คดีอะไรบ้าง'));
+            return [...c.querySelectorAll('tbody tr')].map(tr => [tr.cells[0].textContent.trim(), +tr.cells[tr.cells.length - 1].textContent.replace(/[^\d]/g, '')]); });
+          const want = Object.fromEntries(st.byOfficer.map(o => [o.name, o.cases]));
+          for (const [n, v] of ex) eq(v, want[n === 'ไม่ระบุผู้ตรวจ' ? 'ไม่ระบุ' : n], 'ผู้ตรวจ×ประเภท ' + n);
+          if (!(await sub(r, 'ประเภทคดีรายเดือน')).includes(L)) throw new Error('หัวกราฟประเภทคดีรายเดือนไม่บอกช่วง');
+          await go(r, '#time'); const pend = await r.$$eval('section.card', cs => cs.find(x => x.querySelector('h2')?.textContent === 'คดีที่ยังไม่รับผล').querySelector('.card-h p').textContent);
+          if (!pend.includes(L)) throw new Error('งานค้างไม่บอกช่วง');
+          await go(r, '#check'); if (!(await r.textContent('[data-flash="k_f"]').then(() => r.textContent('#view'))).includes(L)) throw new Error('หน้าตรวจสอบข้อมูลไม่บอกช่วง');
+          await go(r, '#overview');
+          return `คดี ${st.cases} · ของกลาง ${st.evidence} · ${st.byType.length} ประเภท · ${st.byOfficer.length} ผู้ตรวจ · ตาราง${unit} ${tb.length} แถว`;
+        });
+      }
+      await setRange(r, '2025-01-01', '2025-03-31'); await rshot(r, 'range-overview');
+      await check('KPI เทียบช่วงก่อนหน้าที่ยาวเท่ากัน', 'ช่วง ม.ค.–มี.ค. 2568 (เดือนเต็ม) เทียบ ต.ค.–ธ.ค. 2567 · ช่วง 10 วันเทียบ 10 วันก่อนหน้า', async () => {
+        const p1 = summ('2024-10-01', '2024-12-31').cases, t1 = await r.evaluate(() => document.querySelector('[data-flash="c_l"]').closest('.kpi').textContent);
+        eq(num(await r.textContent('[data-flash="c_l"]')), p1, 'ช่วงก่อนหน้า (3 เดือน)'); if (!t1.includes('1 ต.ค. 2567 – 31 ธ.ค. 2567') || !t1.includes('3 เดือน')) throw new Error(t1);
+        await setRange(r, '2025-03-05', '2025-03-14'); const p2 = summ('2025-02-23', '2025-03-04').cases, t2 = await r.evaluate(() => document.querySelector('[data-flash="c_l"]').closest('.kpi').textContent);
+        eq(num(await r.textContent('[data-flash="c_l"]')), p2, 'ช่วงก่อนหน้า (10 วัน)'); if (!t2.includes('23 ก.พ. 2568 – 4 มี.ค. 2568') || !t2.includes('10 วัน')) throw new Error(t2);
+        return `3 เดือน: ก่อนหน้า ${p1} คดี · 10 วัน: ก่อนหน้า ${p2} คดี`;
+      });
+      await setRange(r, '2025-01-15', '2025-06-20'); await go(r, '#monthly'); await rshot(r, 'range-monthly');
+      await check('หน้ารายเดือนกับช่วงที่ไม่ใช่เดือนเต็ม', 'เดือนในตัวเลือกมีเฉพาะ ม.ค.–มิ.ย. 2568 · หัวกราฟบอกช่วงและบอกว่าเดือนแรก/สุดท้ายนับเฉพาะวันในช่วง', async () => {
+        const o = await r.$$eval('#cmSel option', x => x.map(y => y.textContent)); const m = o.slice(1).map(t => t.replace(/\s*\(.*$/, ''));
+        eq(m.join(','), 'ม.ค. 2568,ก.พ. 2568,มี.ค. 2568,เม.ย. 2568,พ.ค. 2568,มิ.ย. 2568', 'เดือน'); eq(num(o[0]), summ('2025-01-15', '2025-06-20').cases, 'รวมทั้งช่วง');
+        const p = await sub(r, 'ประเภทคดีรายเดือน'); if (!p.includes('เฉพาะวันในช่วง')) throw new Error(p); return o[0];
+      });
+      await check('ช่วงที่ไม่ถูกต้อง (วันเริ่มหลังวันสิ้นสุด)', 'ข้อความไทยบอกปัญหาและวิธีแก้ · ไม่เปลี่ยนช่วงเดิม · แผงยังเปิดอยู่', async () => {
+        await go(r, '#overview'); const before = (await r.textContent('#rngBtn')).trim();
+        await fillRange(r, '2025-03-14', '2025-03-05'); await r.click('#rngPanel [data-rng="apply"]'); await r.waitForSelector('#rngMsg:not([hidden])');
+        const t = await r.textContent('#rngMsg'); if (!t.includes('วันเริ่มต้นอยู่หลังวันสิ้นสุด') || !t.includes('14 มี.ค. 2568 – 5 มี.ค. 2568')) throw new Error(t);
+        eq((await r.textContent('#rngBtn')).trim(), before, 'ช่วงเดิม'); if (await r.$('#rngPanel[hidden]')) throw new Error('แผงปิด');
+        await rshot(r, 'range-invalid', false); await r.click('#rngPanel [data-rng="close"]'); return t.trim();
+      });
+      await check('ตัดช่วงให้อยู่ในช่วงที่มีข้อมูล', `ตัวเลือกปีมีเฉพาะปีที่มีข้อมูลถึงปีปัจจุบัน · เลือก 1 ม.ค. 2565 – 31 ธ.ค. 2569 → ${rl(DMIN, DMAX)} = ทั้งหมด พร้อมแจ้ง`, async () => {
+        const ys = await (await openPanel(r), r.$$eval('#rsY option', o => o.map(x => x.textContent))); eq(ys.join(), '2565,2566,2567,2568,2569', 'ปีในตัวเลือก');
+        await setRange(r, '2022-01-01', '2026-12-31'); eq((await r.textContent('#rngBtn')).trim(), rl(DMIN, DMAX), 'ช่วงหลังตัด'); eq(num(await r.textContent('[data-flash="c_n"]')), EXP.allCounted, 'คดี');
+        return (await r.textContent('#toast')).trim();
+      });
+      await check('ชิปปีกับช่วงที่กำหนดเองล้างกันและกัน', 'เลือกช่วง → ไม่มีชิปถูกเลือก · กดชิป 2568 → ช่วงถูกล้าง · เลือกช่วงอีก → ชิปถูกล้าง · ปุ่ม × กลับไป "ทั้งหมด"', async () => {
+        await setRange(r, '2025-03-05', '2025-03-14'); eq((await pressed(r)).length, 0, 'ชิปที่ถูกเลือกขณะใช้ช่วง'); eq(await r.getAttribute('#rngBtn', 'aria-pressed'), 'true', 'ปุ่มช่วง');
+        await r.click('.chip[data-y="2568"]'); await settle(r); eq((await pressed(r)).join(), '2568', 'ชิป'); eq(await r.getAttribute('#rngBtn', 'aria-pressed'), 'false', 'ปุ่มช่วงหลังกดชิป');
+        eq((await r.textContent('#rngBtn')).trim(), 'กำหนดช่วงเอง', 'ข้อความปุ่ม'); eq(num(await r.textContent('[data-flash="c_n"]')), statsOf['2025'].cases, 'คดีปี 2568');
+        await setRange(r, '2025-03-05', '2025-03-14'); eq((await pressed(r)).length, 0, 'ชิปหลังเลือกช่วงอีกครั้ง');
+        await r.click('[data-rng="clear"]'); await settle(r); eq((await pressed(r)).join(), 'ทั้งหมด', 'หลังล้างช่วง'); eq(num(await r.textContent('[data-flash="c_n"]')), EXP.allCounted, 'คดีทั้งหมด');
+      });
+      await check('จำช่วงที่เลือกไว้ (localStorage) หลังเปิดหน้าใหม่', 'เปิดหน้าใหม่แล้วยังเป็นช่วงเดิม ตัวเลขเท่าเดิม', async () => {
+        await setRange(r, '2024-11-15', '2025-02-10'); await r.reload(); await r.waitForSelector('[data-flash="c_n"]'); await settle(r);
+        eq((await r.textContent('#rngBtn')).trim(), rl('2024-11-15', '2025-02-10'), 'ช่วงหลังเปิดใหม่'); eq(num(await r.textContent('[data-flash="c_n"]')), summ('2024-11-15', '2025-02-10').cases, 'คดี');
+      });
+      await check('ช่วงที่ไม่มีคดี ("เดือนนี้" วันที่ 16 พ.ย. 2569 ข้อมูลจำลองถึง ' + thD(DMAX) + ')', 'ข้อความไทยบอกช่วงและช่วงที่มีข้อมูล มีปุ่ม "เลือกช่วงใหม่" / "ดูทั้งหมด" ไม่ error', async () => {
+        await openPanel(r); await r.click('#rngPanel [data-pre="month"]'); await settle(r);
+        const t = await r.textContent('#view .msg.warn'); if (!t.includes('ไม่มีคดี') || !t.includes('1 พ.ย. 2569 – 16 พ.ย. 2569') || !t.includes(thD(DMAX))) throw new Error(t);
+        if (!(await r.$('#view [data-rng="open"]')) || !(await r.$('#view [data-rng="clear"]'))) throw new Error('ไม่มีปุ่ม'); await rshot(r, 'range-empty', false);
+        await r.click('#view [data-rng="clear"]'); await settle(r); return t.replace(/\s+/g, ' ').trim();
+      });
+      await r.context().close();
+
+      // ช่วงสำเร็จรูป: ตรึง "วันนี้" ไว้ 2 วัน
+      for (const [today, want] of [['2026-02-10', { month: ['2026-02-01', '2026-02-10'], prev: ['2026-01-01', '2026-01-31'], m3: ['2025-12-01', '2026-02-10'], m6: ['2025-09-01', '2026-02-10'], year: ['2026-01-01', '2026-12-31'], fy: ['2025-10-01', '2026-09-30'] }],
+                                    ['2026-01-05', { month: ['2026-01-01', '2026-01-05'], prev: ['2025-12-01', '2025-12-31'], m3: ['2025-11-01', '2026-01-05'], m6: ['2025-08-01', '2026-01-05'], year: ['2026-01-01', '2026-12-31'], fy: ['2025-10-01', '2026-09-30'] }]]) {
+        await check(`ช่วงสำเร็จรูป (ตรึงวันนี้ = ${thD(today)})`, Object.entries(want).map(([k, v]) => `${k} ${v[0]}…${v[1]}`).join(' · '), async () => {
+          const q = await newPage({ tz: 'Asia/Bangkok' }); await q.clock.setFixedTime(new Date(today + 'T23:30:00+07:00'));
+          await q.goto(BASE + '#overview'); await q.waitForSelector('[data-flash="c_n"]'); await openPanel(q);
+          const got = Object.fromEntries(await q.$$eval('#rngPanel [data-pre]', b => b.map(x => [x.dataset.pre, [x.dataset.s, x.dataset.e]])));
+          eq(JSON.stringify(got), JSON.stringify(want), 'ช่วงสำเร็จรูป');
+          await q.click('#rngPanel [data-pre="fy"]'); await settle(q); const e = DMAX < want.fy[1] ? DMAX : want.fy[1];
+          eq((await q.textContent('#rngBtn')).trim(), rl(want.fy[0], e), 'ปีงบนี้ (ตัดถึงวันสุดท้ายที่มีข้อมูล)'); eq(num(await q.textContent('[data-flash="c_n"]')), summ(want.fy[0], e).cases, 'คดีปีงบนี้');
+          await openPanel(q); await q.click('#rngPanel [data-pre="prev"]'); await settle(q); eq(num(await q.textContent('[data-flash="c_n"]')), summ(...want.prev).cases, 'คดีเดือนที่แล้ว');
+          await q.context().close(); return `ปีงบนี้ → ${rl(want.fy[0], e)} · เดือนที่แล้ว ${summ(...want.prev).cases} คดี`;
+        });
+      }
+
+      // ไม่มี localStorage (เบราว์เซอร์บล็อก) ก็ยังใช้ได้
+      await check('localStorage ใช้ไม่ได้', 'ไม่มี error · เลือกช่วงได้ตามปกติ', async () => {
+        const q = await newPage(); await q.context().addInitScript(() => { const no = () => { throw new Error('blocked'); }; Storage.prototype.getItem = no; Storage.prototype.setItem = no; });
+        await q.goto(BASE + '#overview'); await q.waitForSelector('[data-flash="c_n"]'); await setRange(q, '2025-03-05', '2025-03-14');
+        eq(num(await q.textContent('[data-flash="c_n"]')), summ('2025-03-05', '2025-03-14').cases, 'คดี'); await q.context().close();
+      });
+
+      // มือถือ 400px + โหมดมืด
+      const mq = await newPage({ viewport: { width: 400, height: 860 }, dpr: 2, tz: 'Asia/Bangkok' }); await mq.clock.setFixedTime(new Date('2026-11-16T10:00:00+07:00'));
+      await mq.goto(BASE + '#overview'); await mq.waitForSelector('[data-flash="c_n"]'); await settle(mq);
+      await check('มือถือ 400px: แผงเลือกช่วง', 'แผงเปิดและหลังเลือกช่วงไม่เลื่อนแนวนอน · ป้ายแกนไม่ซ้อน', async () => {
+        await openPanel(mq); let sw = await mq.evaluate(() => document.documentElement.scrollWidth); if (sw > 402) throw new Error('scrollWidth ' + sw);
+        await rshot(mq, 'range-mobile-panel', false);
+        await setRange(mq, '2025-01-01', '2025-03-31'); sw = await mq.evaluate(() => document.documentElement.scrollWidth); if (sw > 402) throw new Error('scrollWidth ' + sw);
+        const a = await axis(mq); if (a.some(x => x.overlaps)) throw new Error(JSON.stringify(a)); await rshot(mq, 'range-mobile');
+      });
+      await mq.context().close();
+      const dk = await newPage({ scheme: 'dark' }); await dk.goto(BASE + '#overview'); await dk.waitForSelector('[data-flash="c_n"]');
+      await setRange(dk, '2025-03-05', '2025-03-14'); await openPanel(dk); await rshot(dk, 'range-dark'); await dk.context().close();
+
+      // ชีตงานตรวจ: ช่วงเดือน
+      const lb = await newPage(); await lb.goto(BASE + '#overview'); await lb.waitForSelector('[data-flash="c_n"]');
+      await lb.selectOption('#srcSel', 'srv-lab'); await lb.waitForSelector('[data-flash="samples"]'); await settle(lb);
+      const lt = books.lab.tabs['ข้อมูลเคส'], lv = new Map(lt.slice(1).filter(x => typeof x[0] === 'number' && typeof x[1] === 'number').map(x => [x[0] * 12 + x[1] - 1, x]));
+      const lsum = (a, b, col) => { let s = 0; for (let k = a; k <= b; k++) { const x = lv.get(k); if (x && typeof x[col] === 'number') s += x[col]; } return s; };
+      const A = 2568 * 12 + 10, B = 2569 * 12 + 1;   // ส.ค. 2568 (ปีงบ 2568) ถึง พ.ย. 2568 (ปีงบ 2569)
+      await check('ชีตงานตรวจ: ช่วงเดือน ส.ค. 2568 – พ.ย. 2568 (ข้ามปีงบ)', `ตัวอย่าง ${lsum(A, B, 5)} / ของกลาง ${lsum(A, B, 4)} = ผลรวมแท็บ ข้อมูลเคส · ปีก่อน ${lsum(A - 12, B - 12, 5)} · ชิปปีงบไม่ถูกเลือก`, async () => {
+        await openPanel(lb); await lb.selectOption('#lsM', String(A)); await lb.selectOption('#leM', String(B)); await lb.click('#rngPanel [data-rng="apply"]'); await settle(lb);
+        eq(num(await lb.textContent('[data-flash="samples"]')), lsum(A, B, 5), 'ตัวอย่าง'); eq(num(await lb.textContent('[data-flash="items"]')), lsum(A, B, 4), 'ของกลาง');
+        const k = await lb.evaluate(() => document.querySelector('[data-flash="samples"]').closest('.kpi').textContent); if (!k.includes(String(lsum(A - 12, B - 12, 5)).replace(/\B(?=(\d{3})+(?!\d))/g, ','))) throw new Error('ปีก่อน: ' + k);
+        eq((await pressed(lb)).length, 0, 'ชิปปีงบ'); eq((await lb.textContent('#rngBtn')).trim(), 'ส.ค. 2568 – พ.ย. 2568', 'ปุ่มช่วง');
+        const cats = await lb.$$eval('.chart svg', s => s[0].querySelectorAll(':scope > text[text-anchor="middle"]:not(.vl)').length); eq(cats, 4, 'เดือนในกราฟ');
+        await rshot(lb, 'range-lab-overview');
+        await go(lb, '#budget'); const w = await lb.textContent('#view .msg.warn'); if (!w.includes('รายปีงบประมาณ') || !w.includes('ปีงบ 2569') || !w.includes('2568–2569')) throw new Error(w);
+        await go(lb, '#lot'); const lp = await sub(lb, 'ตัวอย่างรายรอบ Lot'); if (!lp.includes('ส.ค. 2568 – พ.ย. 2568')) throw new Error(lp);
+        return `ตัวอย่าง ${lsum(A, B, 5)} · ${w.replace(/\s+/g, ' ').slice(0, 90)}…`;
+      });
+      await check('ชีตงานตรวจ: ช่วงเดือนไม่ถูกต้อง / ชิปปีงบล้างช่วง', 'ข้อความ "เดือนเริ่มต้นอยู่หลังเดือนสิ้นสุด" · กดชิปปีงบแล้วช่วงถูกล้าง', async () => {
+        await go(lb, '#overview'); await openPanel(lb); await lb.selectOption('#lsM', String(B)); await lb.selectOption('#leM', String(A)); await lb.click('#rngPanel [data-rng="apply"]');
+        await lb.waitForSelector('#rngMsg:not([hidden])'); const t = await lb.textContent('#rngMsg'); if (!t.includes('เดือนเริ่มต้นอยู่หลังเดือนสิ้นสุด')) throw new Error(t);
+        await lb.click('#rngPanel [data-rng="close"]'); await lb.click('.chip[data-y="2568"]'); await settle(lb);
+        eq(await lb.getAttribute('#rngBtn', 'aria-pressed'), 'false', 'ปุ่มช่วง'); eq((await pressed(lb)).join(), '2568', 'ชิป'); return t.trim();
+      });
+      await lb.context().close();
+    }
 
     // ---------- ต้นฉบับ dashboard/index.html (แก้ sources.json 404 + แกน x) ----------
     const o = await newPage();

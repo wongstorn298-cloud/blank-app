@@ -101,6 +101,37 @@ input,select{caret-color:var(--focus);accent-color:var(--brand)}
 .chip{border:1px solid var(--ctl-line);background:var(--surface);padding:6px 14px;border-radius:999px;cursor:pointer;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink-2)}
 .chip:hover{border-color:var(--brand);color:var(--ink);background:var(--brand-soft)}
 .chip[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:var(--on-brand);font-weight:600}
+/* ช่วงเวลาที่เลือกเอง: ปุ่มต่อท้ายชิปปี + แผงเลือกช่วง (แทรกใต้แถบ ไม่ใช่หน้าต่างป๊อปอัป) */
+.fy{flex-wrap:wrap;row-gap:6px}
+.rng-w{display:flex;gap:6px;align-items:center;padding:3px 0;min-width:0}
+.rng-btn{display:inline-flex;align-items:center;gap:7px;max-width:100%}
+.rng-btn span{overflow:hidden;text-overflow:ellipsis}
+.rng-btn svg{width:15px;height:15px;flex:none}
+.rng-btn[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.rng-x{width:32px;height:32px;border-radius:50%;border:1px solid var(--ctl-line);background:var(--surface);display:grid;place-items:center;cursor:pointer;color:var(--ink-2);flex:none}
+.rng-x:hover{background:var(--brand-soft);color:var(--ink)}
+.rng-x svg{width:14px;height:14px}
+.rng{background:var(--surface);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px 18px;border:1px solid var(--line)}
+.rng-h h2{font-size:15.5px;margin:0;font-weight:600}
+.rng-h p{margin:2px 0 0;font-size:12.5px;color:var(--ink-2)}
+.rng-b{display:grid;grid-template-columns:minmax(260px,350px) minmax(0,1fr);gap:14px 28px;margin-top:12px}
+.rng h3{font-size:12.5px;font-weight:600;color:var(--ink-2);margin:0 0 6px}
+.rng-pre{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.rng-pre button{all:unset;box-sizing:border-box;width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:8px 10px;border-radius:10px;cursor:pointer;font-size:13.5px;color:var(--ink)}
+.rng-pre button:hover{background:var(--surface-2)}
+.rng-pre button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.rng-pre button[aria-pressed="true"]{font-weight:600;background:var(--brand-soft)}
+.rng-pre button>span{display:inline-flex;align-items:center;gap:8px}
+.rng-pre .ck{width:16px;height:16px;flex:none;color:var(--brand-ink)}
+.rng-pre small{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rng-cu{border-left:1px solid var(--line);padding-left:28px;display:flex;flex-wrap:wrap;align-content:flex-start;gap:12px 24px;min-width:0}
+.rng-cu>h3,.rng-cu>.msg,.rng-cu>.rng-act,.rng-cu>.rng-note{flex-basis:100%}
+.rng-d{border:0;margin:0;padding:0;min-width:0}
+.rng-d legend{font-size:13px;font-weight:600;padding:0;margin-bottom:5px}
+.rng-d div{display:flex;gap:6px;flex-wrap:wrap}
+.rng select{padding:8px 10px;border-radius:10px;border:1px solid var(--ctl-line);background:var(--surface-2);font-variant-numeric:tabular-nums;min-width:0}
+.rng-act{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+.rng-note{font-size:12px;color:var(--muted);margin:0}
 
 #view{display:flex;flex-direction:column;gap:14px;min-width:0}
 .latest{display:flex;flex-wrap:wrap;gap:8px 26px;align-items:center;padding:12px 18px;border-radius:14px;background:var(--brand-soft);color:var(--ink);font-size:13px}
@@ -252,8 +283,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
   .top h1{font-size:22px}
 }
 @media (max-width:560px){.kpis,.kpis.k4{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi-v{font-size:23px}.fy{width:100%}.card{padding:14px 12px 10px}
+  .rng-b{grid-template-columns:minmax(0,1fr)}.rng-cu{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:12px}.rng{padding:14px 12px 16px}.rng-w{width:100%}.rng-btn{flex:1;min-width:0}
   .src{grid-template-columns:minmax(0,1fr)}.src .acts{justify-content:flex-start}.two,.f2{grid-template-columns:1fr}.tools{width:100%}.sel{flex:1}}
-@media (pointer:coarse){.chip,.btn,.btn.sm,.sel,.link,.iconbtn,.search,.nav a,.f input,.f select{min-height:44px}.iconbtn{width:44px}.link{padding:8px 12px}.rowbtn{padding:10px 0}}
+@media (pointer:coarse){.rng-x{width:44px;height:44px}.rng select{min-height:44px}.chip,.btn,.btn.sm,.sel,.link,.iconbtn,.search,.nav a,.f input,.f select{min-height:44px}.iconbtn{width:44px}.link{padding:8px 12px}.rowbtn{padding:10px 0}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -282,7 +314,8 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
           <button class="iconbtn" id="themeBtn" title="สลับโหมดมืด/สว่าง" aria-label="สลับโหมดมืดหรือสว่าง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/></svg></button>
         </div>
       </header>
-      <div class="fy" id="fyBar" hidden><span class="fy-l" id="fyL">ปีงบประมาณ (พ.ศ.)</span><div class="chips" id="chips"></div></div>
+      <div class="fy" id="fyBar" hidden><span class="fy-l" id="fyL">ปีงบประมาณ (พ.ศ.)</span><div class="chips" id="chips"></div><div class="rng-w" id="rngW"></div></div>
+      <div class="rng" id="rngPanel" role="region" aria-labelledby="rngT" hidden></div>
       <div id="view" tabindex="-1"></div>
     </div>
   </main>
@@ -584,6 +617,185 @@ const medianOf = a => { if (!a.length) return null; const s = [...a].sort((x, y)
 const meanOf = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 
 /* =========================================================
+   3b) ช่วงเวลาที่เลือกเอง
+   - ชีตคดี: ช่วง "วันที่รับ" ระดับวัน · ชิปปีกับช่วงที่เลือกเองล้างกันและกัน · ตัดช่วงให้อยู่ในช่วงที่มีข้อมูล
+   - ชีตงานตรวจ: ข้อมูลเป็นรายเดือน จึงเลือกเป็นช่วงเดือน (ข้ามปีงบได้) · งบประมาณยังคิดเป็นรายปีงบ
+   - จำค่าที่เลือกไว้ใน localStorage แยกตามแหล่งข้อมูล (เบราว์เซอร์ไม่ให้ใช้ก็ทำงานได้ตามปกติ แค่ไม่จำ)
+   - ตัวเลขช่วงวันที่ใช้กติกาเดียวกับ Stats.summarize (รวมวันแรกและวันสุดท้าย, เฉพาะแถวที่นับในสถิติ)
+   ========================================================= */
+const DAY = 864e5;
+const RG = { c: null, l: null, open: false };   // c = { a, b, p } เวลา UTC เที่ยงคืนของวันแรก/วันสุดท้าย · l = { a, b, p } เลขเดือนสะสม (ปีงบ×12 + ลำดับเดือน − 1)
+const utc = (y, m, d) => Date.UTC(y, m - 1, d);
+const day0 = t => Math.floor(t / DAY) * DAY;
+const lastDayOf = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+const p2 = n => String(n).padStart(2, '0');
+const ymdOf = t => { const d = new Date(t); return d.getUTCFullYear() + '-' + p2(d.getUTCMonth() + 1) + '-' + p2(d.getUTCDate()); };
+const fromYmd = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '')); return m ? utc(+m[1], +m[2], +m[3]) : null; };
+const thD = t => { const d = new Date(t); return `${d.getUTCDate()} ${CAL[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}`; };
+const rngLabel = g => g.a === g.b ? thD(g.a) : thD(g.a) + ' – ' + thD(g.b);
+const todayT = () => { const n = new Date(); return utc(n.getFullYear(), n.getMonth() + 1, n.getDate()); };   // วันนี้ตามนาฬิกาเครื่องผู้ใช้
+const isRange = sel => !!sel && typeof sel === 'object';
+const inSel = (r, sel) => !sel ? true : typeof sel === 'number' ? r.by === sel : r.t >= sel.a && r.t < sel.b + DAY;
+const selName = sel => !sel ? 'ทุกปี' : typeof sel === 'number' ? 'ปี ' + sel : rngLabel(sel);
+function caseBounds(M){
+  if (!M._bd) { const rs = M.rows.some(r => r.counted) ? M.rows.filter(r => r.counted) : M.rows; let a = Infinity, b = -Infinity;
+    rs.forEach(r => { if (r.t < a) a = r.t; if (r.t > b) b = r.t; }); M._bd = { a: day0(a), b: day0(b) }; }
+  return M._bd;
+}
+/** ช่วงสำเร็จรูป (T = วันนี้) · "เดือนนี้" / "3, 6 เดือนล่าสุด" นับเดือนปฏิทินจนถึงวันนี้ */
+function casePresets(T){
+  const d = new Date(T), y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, f = m >= 10 ? y : y - 1;
+  const ms = k => Date.UTC(y, m - 1 - k, 1);
+  return [['month', 'เดือนนี้', ms(0), T], ['prev', 'เดือนที่แล้ว', ms(1), ms(0) - DAY], ['m3', '3 เดือนล่าสุด', ms(2), T], ['m6', '6 เดือนล่าสุด', ms(5), T],
+    ['year', 'ปีนี้ (ม.ค. – ธ.ค.)', utc(y, 1, 1), utc(y, 12, 31)], ['fy', 'ปีงบประมาณนี้ (ต.ค. – ก.ย.)', utc(f, 10, 1), utc(f + 1, 9, 30)]].map(([k, l, a, b]) => ({ k, l, a, b }));
+}
+/** ตัดช่วงให้อยู่ในช่วงที่มีข้อมูล · ไม่ซ้อนกันเลย = คงช่วงเดิมไว้แล้วแสดงข้อความ "ไม่มีคดีในช่วงนี้" */
+function clampTo(g, bd){ const a = Math.max(g.a, bd.a), b = Math.min(g.b, bd.b); return a > b ? { a: g.a, b: g.b, p: g.p, none: true } : { a, b, p: g.p, cut: a !== g.a || b !== g.b }; }
+/** ช่วงก่อนหน้าที่ยาวเท่ากัน: ช่วงที่เป็นเดือนเต็ม → จำนวนเดือนเท่ากันก่อนหน้า (ม.ค.–มี.ค. เทียบ ต.ค.–ธ.ค.) · อื่น ๆ → จำนวนวันเท่ากันก่อนหน้า */
+function prevPeriod(g){
+  const A = new Date(g.a), B = new Date(g.b);
+  if (A.getUTCDate() === 1 && new Date(g.b + DAY).getUTCDate() === 1) {
+    const k = (B.getUTCFullYear() - A.getUTCFullYear()) * 12 + B.getUTCMonth() - A.getUTCMonth() + 1;
+    return { a: Date.UTC(A.getUTCFullYear(), A.getUTCMonth() - k, 1), b: g.a - DAY, len: k + ' เดือน' };
+  }
+  const n = Math.round((g.b - g.a) / DAY) + 1; return { a: g.a - n * DAY, b: g.a - DAY, len: n + ' วัน' };
+}
+/** กลุ่มเวลาของกราฟ: ชิปปี/ทั้งหมด = รายเดือนตามเดิม · ช่วงที่เลือก ≤ 31 วัน = รายวัน, ≤ 62 วัน = รายสัปดาห์ (7 วันนับจากวันแรก), ยาวกว่านั้น = รายเดือน */
+function seriesOf(rs, sel){
+  if (!isRange(sel)) return { noun: 'เดือน', list: monthsOf(rs).map(o => ({ ...o, lab: mShort(o), full: mFull(o) })) };
+  const g = sel, span = Math.round((g.b - g.a) / DAY) + 1, unit = span <= 31 ? 1 : span <= 62 ? 7 : 0, list = [];
+  if (!unit) { const A = new Date(g.a); let y = A.getUTCFullYear(), m = A.getUTCMonth() + 1;
+    while (utc(y, m, 1) <= g.b) { const m0 = utc(y, m, 1), m1 = utc(y, m, lastDayOf(y, m)), s = Math.max(g.a, m0), e = Math.min(g.b, m1), o = { y, m };
+      list.push({ a: s, b: e, y, m, lab: mShort(o), full: mFull(o) + (s !== m0 || e !== m1 ? ` (เฉพาะวันที่ ${new Date(s).getUTCDate()}–${new Date(e).getUTCDate()})` : '') });
+      if (++m > 12) { m = 1; y++; } } }
+  else for (let t = g.a; t <= g.b; t += unit * DAY) {
+    const e = Math.min(g.b, t + (unit - 1) * DAY), ds = new Date(t), de = new Date(e), dm = x => `${x.getUTCDate()} ${CAL[x.getUTCMonth()]}`;
+    list.push({ a: t, b: e, lab: unit === 1 ? dm(ds) : ds.getUTCMonth() === de.getUTCMonth() ? `${ds.getUTCDate()}–${dm(de)}` : `${dm(ds)}–${dm(de)}`, full: unit === 1 ? thD(t) : rngLabel({ a: t, b: e }) }); }
+  list.forEach(o => { o.n = 0; o.items = 0; o.d1 = []; });
+  rs.forEach(r => { const t = day0(r.t), o = unit ? list[Math.floor((t - g.a) / DAY / unit)] : list.find(x => t >= x.a && t <= x.b); if (!o) return;
+    o.n++; if (r.items != null) o.items += r.items; if (r.d1 != null) o.d1.push(r.d1); });
+  return { noun: unit === 1 ? 'วัน' : unit === 7 ? 'สัปดาห์' : 'เดือน', list, partial: !unit && list.some(o => o.full.includes('เฉพาะวันที่')) };
+}
+
+/* ---- ชีตงานตรวจ: เดือนแบบสะสม ---- */
+const amOf = (fy, idx) => fy * 12 + idx - 1, amFy = am => Math.floor(am / 12), amIdx = am => am % 12 + 1;
+const amShort = am => fyLabel(amFy(am), amIdx(am));
+const amFull = am => { const fy = amFy(am), i = amIdx(am); return MONTHS[i - 1] + ' ' + (i <= 3 ? fy - 1 : fy); };
+const lRngLabel = g => g.a === g.b ? amFull(g.a) : amFull(g.a) + ' – ' + amFull(g.b);
+const inLR = (fy, idx, g) => { const x = amOf(fy, idx); return x >= g.a && x <= g.b; };
+const amList = g => { const o = []; for (let x = g.a; x <= g.b; x++) o.push(x); return o; };
+function labBounds(M){
+  if (M._bd === undefined) { let a = Infinity, b = -Infinity; const add = x => { if (x < a) a = x; if (x > b) b = x; };
+    M.cases.forEach(c => { if (c.samples != null || c.items != null) add(amOf(c.fy, c.idx)); }); M.lots.forEach(l => add(amOf(l.fy, l.idx)));
+    M._bd = isFinite(a) ? { a, b } : null; }
+  return M._bd;
+}
+const labPresets = bd => [3, 6, 12].map(k => ({ k: 'l' + k, l: k + ' เดือนล่าสุด', a: Math.max(bd.a, bd.b - k + 1), b: bd.b }));
+
+/* ---- จำค่าที่เลือก (ต่อผู้ชม = ต่อเบราว์เซอร์, แยกตามแหล่งข้อมูล) ---- */
+const RKEY = 'dna-range-v1';
+const rStore = () => { try { const v = JSON.parse(localStorage.getItem(RKEY) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } };
+function saveSel(){
+  try { const all = rStore(), k = S.active + '|' + S.tpl;
+    all[k] = S.tpl === 'lab' ? (RG.l ? { m: [RG.l.a, RG.l.b], p: RG.l.p || '' } : { fy: S.fy }) : (RG.c ? { d: [ymdOf(RG.c.a), ymdOf(RG.c.b)], p: RG.c.p || '' } : { yr: S.yr });
+    localStorage.setItem(RKEY, JSON.stringify(all)); } catch (e) {}
+}
+function restoreSel(tpl){
+  RG.c = null; RG.l = null; RG.open = false;
+  const v = rStore()[S.active + '|' + tpl], M = S.M; if (!v || !M) return;
+  if (tpl === 'lab') { const bd = labBounds(M);
+    if (v.m && bd) { const pr = v.p && labPresets(bd).find(x => x.k === v.p), a = pr ? pr.a : Math.max(bd.a, +v.m[0]), b = pr ? pr.b : Math.min(bd.b, +v.m[1]);
+      if (a <= b) RG.l = { a, b, p: pr ? pr.k : '' }; }
+    else if (v.fy) S.fy = +v.fy; return; }
+  if (v.d) { const pr = v.p && casePresets(todayT()).find(x => x.k === v.p), a = pr ? pr.a : fromYmd(v.d[0]), b = pr ? pr.b : fromYmd(v.d[1]);
+    if (a != null && b != null && a <= b) RG.c = clampTo({ a, b, p: pr ? pr.k : '' }, caseBounds(M)); }
+  else if (v.yr) S.yr = +v.yr;
+}
+
+/* ---- ปุ่มและแผงเลือกช่วง ---- */
+const IC_CAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>';
+const IC_CHEV = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+const IC_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const IC_CK = '<svg class="ck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const opt = (v, l, on) => `<option value="${v}"${on ? ' selected' : ''}>${l}</option>`;
+function dateField(id, label, t, y0, y1){
+  const d = new Date(t), y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, dd = d.getUTCDate(); let ys = '';
+  for (let k = y0; k <= y1; k++) ys += opt(k, k + 543, k === y);
+  return `<fieldset class="rng-d"><legend>${label}</legend><div><select id="${id}D" aria-label="${label} (วัน)">${[...Array(lastDayOf(y, m))].map((_, i) => opt(i + 1, i + 1, i + 1 === dd)).join('')}</select><select id="${id}M" aria-label="${label} (เดือน)">${CAL.map((c, i) => opt(i + 1, c, i + 1 === m)).join('')}</select><select id="${id}Y" aria-label="${label} (ปี พ.ศ.)">${ys}</select></div></fieldset>`;
+}
+const readDate = id => { const y = +$('#' + id + 'Y').value, m = +$('#' + id + 'M').value; return utc(y, m, Math.min(+$('#' + id + 'D').value, lastDayOf(y, m))); };
+function fixDays(id){ const y = +$('#' + id + 'Y').value, m = +$('#' + id + 'M').value, el = $('#' + id + 'D'), d = Math.min(+el.value, lastDayOf(y, m));
+  el.innerHTML = [...Array(lastDayOf(y, m))].map((_, i) => opt(i + 1, i + 1, i + 1 === d)).join(''); }
+const preRow = (p, on, sub, attrs) => `<li><button type="button" data-pre="${p.k}" ${attrs} aria-pressed="${on}"><span>${on ? IC_CK : '<i style="width:16px;flex:none"></i>'}${p.l}</span><small>${sub}</small></button></li>`;
+function casePanel(){
+  const M = S.M, bd = caseBounds(M), T = todayT(), g = RG.c;
+  const pre = casePresets(T).map(p => preRow(p, !!(g && g.p === p.k), rngLabel(p), `data-s="${ymdOf(p.a)}" data-e="${ymdOf(p.b)}"`)).join('');
+  const def = g ? g : S.yr ? clampTo({ a: utc(S.yr - 543, 1, 1), b: utc(S.yr - 543, 12, 31) }, bd) : { a: Math.max(bd.a, Date.UTC(new Date(bd.b).getUTCFullYear(), new Date(bd.b).getUTCMonth() - 2, 1)), b: bd.b };
+  const y0 = Math.min(new Date(bd.a).getUTCFullYear(), new Date(def.a).getUTCFullYear()), y1 = Math.max(new Date(bd.b).getUTCFullYear(), new Date(T).getUTCFullYear(), new Date(def.b).getUTCFullYear());
+  return `<div class="rng-h"><h2 id="rngT">เลือกช่วงวันที่รับคดี</h2><p>ข้อมูลในชีตมีวันที่รับตั้งแต่ <b>${thD(bd.a)}</b> ถึง <b>${thD(bd.b)}</b> · ช่วงที่เกินจะถูกตัดให้อยู่ในช่วงนี้</p></div>
+    <div class="rng-b"><div><h3>ช่วงสำเร็จรูป</h3><ul class="rng-pre">${pre}</ul></div>
+    <div class="rng-cu"><h3>กำหนดเอง</h3>${dateField('rs', 'ตั้งแต่วันที่', def.a, y0, y1)}${dateField('re', 'ถึงวันที่ (นับรวมวันสุดท้าย)', def.b, y0, y1)}
+      <div id="rngMsg" class="msg err" role="alert" hidden></div>
+      <div class="rng-act"><button type="button" class="btn sm" data-rng="apply">ใช้ช่วงนี้</button><button type="button" class="btn sm ghost" data-rng="close">ปิด</button></div>
+      <p class="rng-note">เลือกปีจากปุ่มด้านบนเมื่อไรก็ได้ ช่วงที่กำหนดเองจะถูกล้าง</p></div></div>`;
+}
+function labPanel(){
+  const M = S.M, bd = labBounds(M), g = RG.l;
+  const def = g ? g : S.fy ? { a: Math.max(bd.a, amOf(S.fy, 1)), b: Math.min(bd.b, amOf(S.fy, 12)) } : { a: Math.max(bd.a, bd.b - 5), b: bd.b };
+  const opts = sel => amList(bd).map(x => opt(x, amFull(x), x === sel)).join('');
+  const pre = labPresets(bd).map(p => preRow(p, !!(g && g.p === p.k), lRngLabel(p), `data-a="${p.a}" data-b="${p.b}"`)).join('');
+  return `<div class="rng-h"><h2 id="rngT">เลือกช่วงเดือน</h2><p>ข้อมูลรายเดือนมีตั้งแต่ <b>${amFull(bd.a)}</b> ถึง <b>${amFull(bd.b)}</b> · เลือกข้ามปีงบได้ · งบประมาณยังคิดเป็นรายปีงบประมาณ</p></div>
+    <div class="rng-b"><div><h3>ช่วงสำเร็จรูป (นับจากเดือนล่าสุดที่มีข้อมูล)</h3><ul class="rng-pre">${pre}</ul></div>
+    <div class="rng-cu"><h3>กำหนดเอง</h3><fieldset class="rng-d"><legend>ตั้งแต่เดือน</legend><div><select id="lsM" aria-label="ตั้งแต่เดือน">${opts(def.a)}</select></div></fieldset>
+      <fieldset class="rng-d"><legend>ถึงเดือน (นับรวมเดือนสุดท้าย)</legend><div><select id="leM" aria-label="ถึงเดือน">${opts(def.b)}</select></div></fieldset>
+      <div id="rngMsg" class="msg err" role="alert" hidden></div>
+      <div class="rng-act"><button type="button" class="btn sm" data-rng="apply">ใช้ช่วงนี้</button><button type="button" class="btn sm ghost" data-rng="close">ปิด</button></div>
+      <p class="rng-note">เลือกปีงบจากปุ่มด้านบนเมื่อไรก็ได้ ช่วงเดือนจะถูกล้าง</p></div></div>`;
+}
+/** ปุ่ม "กำหนดช่วงเอง" ต่อท้ายชิป + แผงเลือก (เรียกจาก renderChrome) */
+function renderRange(show){
+  const w = $('#rngW'), pn = $('#rngPanel'), lab = S.tpl === 'lab';
+  if (!show || (lab && !labBounds(S.M))) { w.innerHTML = ''; pn.hidden = true; pn.innerHTML = ''; return; }
+  const g = lab ? RG.l : RG.c, txt = g ? (lab ? lRngLabel(g) : rngLabel(g)) : lab ? 'กำหนดช่วงเดือนเอง' : 'กำหนดช่วงเอง';
+  w.innerHTML = `<button type="button" class="chip rng-btn" id="rngBtn" data-rng="toggle" aria-expanded="${RG.open}" aria-controls="rngPanel" aria-pressed="${!!g}"${g ? ` aria-label="ช่วงที่เลือก ${esc(txt)} · กดเพื่อเปลี่ยน"` : ''}>${IC_CAL}<span>${esc(txt)}</span>${IC_CHEV}</button>${g ? `<button type="button" class="rng-x" data-rng="clear" title="ล้างช่วง กลับไปดู${lab ? 'ตามปีงบ' : 'ทั้งหมด'}" aria-label="ล้างช่วงที่เลือก">${IC_X}</button>` : ''}`;
+  const key = S.active + '|' + S.tpl;
+  if (!RG.open) { pn.hidden = true; pn.innerHTML = ''; return; }
+  if (pn.hidden || pn.dataset.k !== key) { pn.dataset.k = key; pn.innerHTML = lab ? labPanel() : casePanel(); pn.hidden = false; }
+}
+function rngError(t){ const m = $('#rngMsg'); if (!m) return; m.innerHTML = t; m.hidden = false; }
+function applyRange(g){
+  if (S.tpl === 'lab') { const bd = labBounds(S.M); RG.l = { a: Math.max(bd.a, g.a), b: Math.min(bd.b, g.b), p: g.p || '' }; }
+  else { const c = clampTo(g, caseBounds(S.M)); RG.c = c; S.yr = 0; S.cm = 0; S.drill = null; S.pendLimit = 25;
+    if (c.cut) toast('ปรับช่วงให้อยู่ในช่วงที่มีข้อมูล: ' + rngLabel(c), 4500); }
+  RG.open = false; S.lotLimit = 25; saveSel(); render(); const b = $('#rngBtn'); if (b) b.focus();
+}
+function clearRange(){ if (S.tpl === 'lab') RG.l = null; else { RG.c = null; S.yr = 0; S.cm = 0; S.drill = null; } RG.open = false; saveSel(); render(); }
+document.addEventListener('click', e => {
+  const pb = e.target.closest('#rngPanel [data-pre]');
+  if (pb) return applyRange(S.tpl === 'lab' ? { a: +pb.dataset.a, b: +pb.dataset.b, p: pb.dataset.pre } : { a: fromYmd(pb.dataset.s), b: fromYmd(pb.dataset.e), p: pb.dataset.pre });
+  const b = e.target.closest('[data-rng]'); if (!b || !S.M) return; const a = b.dataset.rng;
+  if (a === 'toggle' || a === 'open') { RG.open = a === 'open' ? true : !RG.open; renderChrome(); if (RG.open) { $('#rngPanel').scrollIntoView({ block: 'nearest' }); const f = $('#rngPanel [data-pre]'); if (f) f.focus(); } }
+  else if (a === 'close') { RG.open = false; renderChrome(); $('#rngBtn')?.focus(); }
+  else if (a === 'clear') clearRange();
+  else if (a === 'apply') {
+    if (S.tpl === 'lab') { const x = +$('#lsM').value, y = +$('#leM').value;
+      if (x > y) return rngError(`<b>เดือนเริ่มต้นอยู่หลังเดือนสิ้นสุด</b> (${amFull(x)} – ${amFull(y)}) · เลือกเดือนเริ่มต้นให้ไม่หลังเดือนสิ้นสุด แล้วกด "ใช้ช่วงนี้" อีกครั้ง`);
+      return applyRange({ a: x, b: y }); }
+    const x = readDate('rs'), y = readDate('re');
+    if (x > y) return rngError(`<b>วันเริ่มต้นอยู่หลังวันสิ้นสุด</b> (${thD(x)} – ${thD(y)}) · เลือกวันเริ่มต้นให้ไม่หลังวันสิ้นสุด แล้วกด "ใช้ช่วงนี้" อีกครั้ง`);
+    applyRange({ a: x, b: y });
+  }
+});
+document.addEventListener('change', e => { const m = /^(rs|re)[MY]$/.exec(e.target.id || ''); if (m) fixDays(m[1]); if (e.target.closest && e.target.closest('#rngPanel')) { const g = $('#rngMsg'); if (g) g.hidden = true; } });
+$('#rngPanel').addEventListener('keydown', e => { if (e.key === 'Escape') { RG.open = false; renderChrome(); $('#rngBtn')?.focus(); } });
+/** ไม่มีคดีในช่วงที่เลือก */
+function emptyRange(M, g, check){
+  const bd = caseBounds(M);
+  return `<section class="card"><div class="msg warn" role="status"><b>ไม่มีคดี${check ? '' : 'ที่นับในสถิติ'}ที่รับในช่วง ${rngLabel(g)}</b><br>ข้อมูลในชีตมีวันที่รับตั้งแต่ ${thD(bd.a)} ถึง ${thD(bd.b)} · เลือกช่วงใหม่ หรือกด "ดูทั้งหมด"</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px"><button class="btn" data-rng="open">เลือกช่วงใหม่</button><button class="btn ghost" data-rng="clear">ดูทั้งหมด</button></div></section>`;
+}
+
+/* =========================================================
    4) หน้าจอแม่แบบ lab (งานตรวจ · Lot · งบประมาณ)
    ========================================================= */
 const mk = (M, fy, idx) => M.cases.get(fy*100 + idx);
@@ -688,17 +900,71 @@ function labLot(M, fy){
 }
 function lotTable(M, fy){
   const q = S.lotQ.trim().toLowerCase();
-  const list = M.lots.filter(l => l.fy === fy).sort((x, y) => y.t - x.t).filter(l => !q || (l.no + ' ' + l.src + ' ' + l.day + ' ' + CAL[l.m-1]).toLowerCase().includes(q));
+  const list = M.lots.filter(l => RG.l ? inLR(l.fy, l.idx, RG.l) : l.fy === fy).sort((x, y) => y.t - x.t).filter(l => !q || (l.no + ' ' + l.src + ' ' + l.day + ' ' + CAL[l.m-1]).toLowerCase().includes(q));
   const shown = list.slice(0, S.lotLimit);
   return `<div class="scroll"><table><thead><tr><th class="l">Lot No.</th><th class="l">วันที่</th><th>ตัวอย่าง</th><th class="l">รอบ (26–25)</th><th class="l">ที่มาของวันที่</th></tr></thead><tbody>${shown.map(l =>
     `<tr><td class="l">${esc(l.no)}</td><td class="l">${l.day} ${CAL[l.m-1]} ${l.y+543}</td><td>${n0(l.samples)}</td><td class="l">${fyLabel(l.fy, l.idx)}</td><td class="l w">${l.est ? '<span class="badge">ประมาณการ</span>' : `<span class="badge ok">${esc(l.src.startsWith('ระบุ') ? 'ตามต้นฉบับ' : l.src.length > 38 ? l.src.slice(0, 38) + '…' : l.src)}</span>`}</td></tr>`).join('')}</tbody></table></div>${
     list.length > shown.length ? `<div style="text-align:center;padding:12px"><button class="btn ghost" id="moreLot">แสดงเพิ่ม (เหลือ ${list.length - shown.length})</button></div>` : ''}<span id="lotN" hidden>${n0(list.length)} รายการ · เรียงจากล่าสุด</span>`;
 }
 
+/* ---------- แม่แบบ lab: ช่วงเดือนที่เลือกเอง (เทียบกับเดือนเดียวกันของปีก่อน) ---------- */
+const labVal = (M, am, k) => mk(M, amFy(am), amIdx(am))?.[k] ?? null;
+const labSum = (M, list, k) => list.reduce((o, am) => { const x = labVal(M, am, k); if (x != null) { o.s += x; o.n++; } return o; }, { s: 0, n: 0 });
+const labRangeNote = g => `<div class="msg">ช่วงเดือน <b>${lRngLabel(g)}</b> · เทียบกับเดือนเดียวกันของปีก่อน · <b>งบประมาณและต้นทุนต่อตัวอย่างยังคิดเป็นรายปีงบประมาณ</b> ดูได้ที่หน้า งบประมาณ</div>`;
+function labOverviewR(M, g){
+  const ams = amList(g), prev = ams.map(x => x - 12), cS = labSum(M, ams, 'samples'), cI = labSum(M, ams, 'items'), pS = labSum(M, prev, 'samples'), pI = labSum(M, prev, 'items');
+  const lots = M.lots.filter(l => inLR(l.fy, l.idx, g)), lotS = lots.reduce((s, l) => s + l.samples, 0), PL = 'ช่วงเดียวกันปีก่อน';
+  let peak = null, lo = null, rS = 0, rI = 0;
+  ams.forEach(am => { const x = labVal(M, am, 'samples'), i = labVal(M, am, 'items'); if (x == null) return;
+    if (!peak || x > peak.v) peak = { v: x, am }; if (!lo || x < lo.v) lo = { v: x, am }; if (i) { rS += x; rI += i; } });
+  const kp = [
+    kpi('samples', 'ตัวอย่างตรวจ', n0(cS.s), `${pS.n ? deltaChip(delta(cS.s, pS.s)) : ''}<span>${PL} ${pS.n ? n0(pS.s) : '—'}</span>`, true),
+    kpi('items', 'ของกลาง (ชิ้น)', cI.n ? n0(cI.s) : '—', cI.n ? `${pI.n ? deltaChip(delta(cI.s, pI.s)) : ''}<span>${PL} ${pI.n ? n0(pI.s) : '—'}</span>` : 'ยังไม่มีข้อมูลของกลาง'),
+    kpi('avg', 'เฉลี่ยตัวอย่าง / เดือน', cS.n ? n0(cS.s / cS.n) : '—', `<span>${PL} ${pS.n ? n0(pS.s / pS.n) : '—'} · ${cS.n} เดือนที่มีข้อมูล</span>`),
+    kpi('ratio', 'ตัวอย่าง ต่อ ของกลาง 1 ชิ้น', rI ? n2(rS / rI) : '—', '<span>เฉพาะเดือนที่มีทั้งสองค่า</span>'),
+    kpi('months', 'จำนวนเดือนในช่วง', n0(ams.length), `<span>มีข้อมูลตัวอย่าง ${cS.n} เดือน</span>`),
+    kpi('lot', 'Lot พัสดุ (26–25)', n0(lots.length), `<span>รวม ${n0(lotS)} ตัวอย่าง</span>`)].join('');
+  const hl = [peak ? ['เดือนที่ตัวอย่างสูงสุด', `${amFull(peak.am)} · ${n0(peak.v)}`] : null, lo && cS.n > 1 ? ['เดือนที่ตัวอย่างต่ำสุด', `${amFull(lo.am)} · ${n0(lo.v)}`] : null,
+    rI ? ['ตัวอย่าง ต่อ ของกลาง 1 ชิ้น', n2(rS / rI)] : null, lots.length ? ['ตัวอย่างเฉลี่ยต่อ Lot', n1(lotS / lots.length)] : null].filter(Boolean)
+    .map(r => `<li><span>${r[0]}</span><b>${r[1]}</b></li>`).join('') || '<li><span>ยังไม่มีข้อมูลในช่วงนี้</span></li>';
+  const cats = ams.map(amShort), tips = ams.map(amFull), few = ams.length <= 14, L = lRngLabel(g);
+  const yrs = M.years.filter(y => yearStat(M, y).months > 0), ys = yrs.map(y => yearStat(M, y)), inFy = y => y >= amFy(g.a) && y <= amFy(g.b);
+  const ser = k => [{ name: 'ช่วงที่เลือก', color: 'var(--s1)', values: ams.map(x => labVal(M, x, k)) }, { name: PL, color: 'var(--s2)', values: prev.map(x => labVal(M, x, k)) }];
+  return `${labLatest(M)}${labRangeNote(g)}<div class="kpis">${kp}</div><div class="grid">${
+    chartCard('span-8', { title: 'ตัวอย่างตรวจรายเดือน', sub: `${L} เทียบ${PL}`, cats, tipCats: tips, catLabel: 'เดือน', h: 270, labelMax: true, labelAll: few, series: ser('samples') })}
+    <section class="card span-4"><div class="card-h"><div><h2>ไฮไลต์ช่วงที่เลือก</h2><p>${L}</p></div></div><ul class="hl">${hl}</ul></section>${
+    chartCard('span-6', { title: 'ของกลาง (ชิ้น) รายเดือน', sub: `${L} เทียบ${PL}`, cats, tipCats: tips, catLabel: 'เดือน', h: 250, labelMax: true, labelAll: few, series: ser('items') })}${
+    chartCard('span-6', { title: 'ตัวอย่างตรวจรายปีงบประมาณ', sub: 'ทั้งปีงบ (ไม่ตัดตามช่วง) · แท่งสีเข้ม = ปีงบที่ช่วงที่เลือกคาบอยู่', cats: yrs.map(String), catLabel: 'ปีงบ', h: 250, labelAll: true,
+      colors: yrs.map(y => inFy(y) ? 'var(--s1)' : 'var(--s2)'), series: [{ name: 'ตัวอย่างตรวจ', color: 'var(--s1)', values: ys.map(s => s.samples) }] })}
+    <section class="card span-12"><div class="card-h"><div><h2>สรุปรายปีงบประมาณ</h2><p>ทั้งปีงบ · คลิกแถวเพื่อกลับไปดูตามปีงบ (ล้างช่วงเดือน)</p></div></div><div class="scroll">${labYearTable(M, null)}</div></section></div>`;
+}
+function labLotR(M, g){
+  const ams = amList(g), lots = M.lots.filter(l => inLR(l.fy, l.idx, g)), L = lRngLabel(g);
+  const cyc = ams.map(() => ({ n: 0, s: 0, e: 0 }));
+  lots.forEach(l => { const c = cyc[amOf(l.fy, l.idx) - g.a]; c.n++; if (l.est) c.e += l.samples; else c.s += l.samples; });
+  const tot = lots.reduce((s, l) => s + l.samples, 0), est = lots.filter(l => l.est).reduce((s, l) => s + l.samples, 0), cats = ams.map(amShort), tips = ams.map(amFull);
+  const kp = [kpi('l_n', 'จำนวน Lot', n0(lots.length), L, true), kpi('l_s', 'ตัวอย่างรวมทุก Lot', n0(tot), `${cyc.filter(c => c.n).length} รอบที่มีข้อมูล`),
+    kpi('l_avg', 'ตัวอย่างเฉลี่ย / Lot', lots.length ? n1(tot / lots.length) : '—', 'ตัวอย่าง ต่อ Lot'),
+    kpi('l_est', 'ใช้วันที่ประมาณการ', tot ? (est / tot * 100).toFixed(1) + '%' : '—', `${n0(est)} ตัวอย่าง ที่ต้นฉบับเว้นว่างวันที่`)].join('');
+  return `<div class="kpis k4">${kp}</div><div class="grid">${
+    chartCard('span-7', { title: 'ตัวอย่างรายรอบ Lot (26 – 25)', sub: `${L} · ลายเฉียง = วันที่ที่ระบบประมาณการให้`, cats, tipCats: tips, catLabel: 'รอบ (เดือนสิ้นรอบ)', h: 270, stacked: true,
+      foot: i => `${cyc[i].n} Lot`, series: [{ name: 'วันที่ตามต้นฉบับ', color: 'var(--s1)', values: cyc.map(c => c.s) }, { name: 'วันที่ประมาณการ', color: 'var(--s1)', hatch: true, values: cyc.map(c => c.e) }] })}${
+    chartCard('span-5', { title: 'เทียบรายงานรายเดือน กับ Lot', sub: `${L} · ตัวอย่างตามรายงานเทียบยอดรวมของ Lot ในรอบเดียวกัน`, cats, tipCats: tips, catLabel: 'เดือน', h: 270, labelMax: true,
+      series: [{ name: 'รายงานรายเดือน', color: 'var(--s2)', values: ams.map(x => labVal(M, x, 'samples')) }, { name: 'ตาม Lot', color: 'var(--s1)', values: cyc.map(c => c.s + c.e || null) }] })}
+    <section class="card span-12"><div class="card-h"><div><h2>รายการ Lot ${L}</h2><p id="lotCount"></p></div><input class="search" id="lotQ" type="search" placeholder="ค้นหา Lot No. / เดือน / ที่มา" value="${esc(S.lotQ)}" aria-label="ค้นหา Lot"></div><div id="lotTbl">${lotTable(M, S.fy)}</div></section></div>`;
+}
+function labView(){
+  const M = S.M, g = RG.l;
+  if (S.view === 'budget') { if (!g) return labBudget(M, S.fy); const f0 = amFy(g.a), f1 = amFy(g.b);
+    return `<div class="msg warn">งบประมาณจัดสรรเป็น<b>รายปีงบประมาณ</b> จึงไม่ตัดตามช่วงเดือน ${lRngLabel(g)} · หน้านี้แสดงทั้งปีงบ <b>${f1}</b> (ปีงบของเดือนสุดท้ายในช่วง${f0 !== f1 ? ` ซึ่งคาบปีงบ ${f0}–${f1}` : ''}) · ดูปีงบอื่นได้จากปุ่มปีงบด้านบน</div>` + labBudget(M, f1); }
+  if (!g) return S.view === 'lot' ? labLot(M, S.fy) : labOverview(M, S.fy);
+  return S.view === 'lot' ? labLotR(M, g) : labOverviewR(M, g);
+}
+
 /* =========================================================
    5) หน้าจอแม่แบบ cases (รายคดี)
    ========================================================= */
-const scope = (M, yr) => M.rows.filter(r => r.counted && (!yr || r.by === yr));
+const scope = (M, yr) => M.rows.filter(r => r.counted && inSel(r, yr));   // yr = 0 (ทั้งหมด) / ปี พ.ศ. / ช่วงที่เลือก { a, b }
 const aggC = rs => { let items = 0, wi = 0; rs.forEach(r => { if (r.items != null) { items += r.items; wi++; } }); return { n: rs.length, items, wi, avg: wi ? items / wi : null }; };
 function monthsOf(rs){
   const m = new Map();
@@ -713,27 +979,34 @@ const groupCount = (rs, keyFn) => { const m = new Map(); rs.forEach(r => { const
 const statusOf = r => r.done ? 'รับผลไปแล้ว' : r.wait ? 'เสร็จแล้ว รอรับผล' : 'กำลังดำเนินการ';
 const ageDays = r => Math.max(0, Math.floor((Date.now() - r.t) / 864e5));
 
+/** KPI เทียบช่วงก่อนหน้าที่ยาวเท่ากัน (ใช้แทน "คดีเดือนล่าสุด / เดือนก่อน" เมื่อเลือกช่วงเอง) */
+function cmpKpi(M, g, n){
+  const pg = prevPeriod(g), bd = caseBounds(M), pn = scope(M, pg).length;
+  if (pg.b < bd.a) return kpi('c_l', `ช่วงก่อนหน้า (${pg.len})`, '—', `<span>${rngLabel(pg)} · ไม่มีข้อมูลก่อน ${thD(bd.a)}</span>`);
+  const part = pg.a < bd.a;
+  return kpi('c_l', `ช่วงก่อนหน้า (${pg.len})`, n0(pn), `${part ? '' : deltaChip(delta(n, pn))}<span>${part ? 'ข้อมูลไม่ครบช่วง' : 'ยาวเท่ากัน · ช่วงนี้เทียบช่วงก่อน'} · ${rngLabel(pg)}</span>`);
+}
 function casesOverview(M, yr){
-  const rs = scope(M, yr), a = aggC(rs), allMonths = monthsOf(scope(M, 0)), ms = monthsOf(rs);
+  const rs = scope(M, yr), a = aggC(rs), allMonths = monthsOf(scope(M, 0)), B = seriesOf(rs, yr), ms = B.list, rg = isRange(yr) ? yr : null;
   const cur = allMonths.at(-1), prev = allMonths.at(-2), now = new Date();
   const isNow = cur && cur.y === now.getFullYear() && cur.m === now.getMonth() + 1;
-  const flagged = M.rows.filter(r => r.flag).length, prog = rs.filter(r => !r.done && !r.wait).length, wait = rs.filter(r => r.wait).length;
+  const flagged = M.rows.filter(r => r.flag && inSel(r, yr)).length, prog = rs.filter(r => !r.done && !r.wait).length, wait = rs.filter(r => r.wait).length;
   const over = rs.filter(r => r.items != null && r.items > M.thr), overItems = over.reduce((s, r) => s + r.items, 0);
   const itemsArr = rs.filter(r => r.items != null).map(r => r.items);
   const kp = [
-    kpi('c_n', 'คดีทั้งหมด', n0(a.n), `<span>${yr ? 'ปี ' + yr : 'ทุกปี'} · นับตามวันที่รับ</span>`, true),
+    kpi('c_n', 'คดีทั้งหมด', n0(a.n), `<span>${selName(yr)} · นับตามวันที่รับ</span>`, true),
     kpi('c_i', 'ของกลางรวม (ชิ้น)', n0(a.items), `<span>จาก ${n0(a.wi)} คดีที่ระบุของกลาง</span>`),
     kpi('c_a', 'ของกลางเฉลี่ยต่อคดี', n2(a.avg), `<span>มัธยฐาน ${n0(medianOf(itemsArr))} ชิ้น</span>`),
-    kpi('c_l', cur ? `คดีเดือนล่าสุด (${mFull(cur)})` : 'คดีเดือนล่าสุด', cur ? n0(cur.n) : '—', cur ? `${prev ? deltaChip(delta(cur.n, prev.n)) + `<span>เดือนก่อน ${n0(prev.n)}</span>` : ''}${isNow ? '<span>เดือนนี้ยังไม่ครบ</span>' : ''}` : ''),
+    rg ? cmpKpi(M, rg, a.n) : kpi('c_l', cur ? `คดีเดือนล่าสุด (${mFull(cur)})` : 'คดีเดือนล่าสุด', cur ? n0(cur.n) : '—', cur ? `${prev ? deltaChip(delta(cur.n, prev.n)) + `<span>เดือนก่อน ${n0(prev.n)}</span>` : ''}${isNow ? '<span>เดือนนี้ยังไม่ครบ</span>' : ''}` : ''),
     kpi('c_f', 'แถวที่ควรตรวจสอบ', n0(flagged), '<span>ดูที่เมนู ตรวจสอบข้อมูล</span>'),
     kpi('c_p', 'อยู่ระหว่างดำเนินการ', n0(prog), `<span>เสร็จแล้ว รอรับผล ${n0(wait)} คดี</span>`)
   ].join('');
   const note = over.length ? `<div class="latest"><span class="tag">หมายเหตุ</span><span>คดีที่ของกลางเกินเกณฑ์ (${n0(M.thr)} ชิ้น) มี <b>${over.length}</b> คดี รวม <b>${n0(overItems)}</b> ชิ้น นับรวมอยู่ในตัวเลขทั้งหมดแล้ว</span></div>` : '';
-  const labs = ms.map(mShort), tips = ms.map(mFull);
-  let peak = null; ms.forEach(o => { if (!peak || o.n > peak.n) peak = o; });
+  const labs = ms.map(o => o.lab), tips = ms.map(o => o.full), few = rg && ms.length <= 16;
+  let peak = null; ms.forEach(o => { if (o.n && (!peak || o.n > peak.n)) peak = o; });
   const topProv = groupCount(rs, r => r.prov)[0], d1 = rs.map(r => r.d1).filter(v => v != null);
-  const hl = [peak ? ['เดือนที่มีคดีมากที่สุด', `${mFull(peak)} · ${n0(peak.n)} คดี`] : null,
-    ms.length ? ['คดีเฉลี่ยต่อเดือน', n1(a.n / ms.filter(o => o.n).length)] : null,
+  const hl = [peak ? [`${B.noun}ที่มีคดีมากที่สุด`, `${peak.full} · ${n0(peak.n)} คดี`] : null,
+    ms.length ? [`คดีเฉลี่ยต่อ${B.noun}`, n1(a.n / (rg ? ms.length : ms.filter(o => o.n).length))] : null,
     topProv ? ['จังหวัดที่ส่งตรวจมากที่สุด', `${topProv.l} · ${n0(topProv.v)} คดี`] : null,
     d1.length ? ['รับ → ตรวจเสร็จ (มัธยฐาน)', `${n0(medianOf(d1))} วัน`] : null].filter(Boolean)
     .map(r => `<li><span>${r[0]}</span><b>${r[1]}</b></li>`).join('') || '<li><span>ยังไม่มีข้อมูล</span></li>';
@@ -741,30 +1014,36 @@ function casesOverview(M, yr){
   const all = aggC(scope(M, 0));
   const top = rs.filter(r => r.items != null).sort((x, y) => y.items - x.items).slice(0, 10);
   return `${note}<div class="kpis">${kp}</div><div class="grid">${
-    chartCard('span-8', { title: 'จำนวนคดีรายเดือน', sub: 'นับตามวันที่รับคดี' + (yr ? ` · ปี ${yr}` : ''), cats: labs, tipCats: tips, catLabel: 'เดือน', h: 260, labelMax: true, series: [{ name: 'คดี', color: 'var(--s1)', values: ms.map(o => o.n || null) }] })}
-    <section class="card span-4"><div class="card-h"><div><h2>ไฮไลต์</h2><p>${yr ? 'ปี ' + yr : 'ทุกปี'}</p></div></div><ul class="hl">${hl}</ul></section>${
-    chartCard('span-8', { title: 'ของกลางรายเดือน (ชิ้น)', sub: 'บางเดือนสูงจากคดีที่มีของกลางจำนวนมาก ดูคดีเหล่านั้นในตารางด้านล่าง', cats: labs, tipCats: tips, catLabel: 'เดือน', h: 260, labelMax: true, series: [{ name: 'ของกลาง (ชิ้น)', color: 'var(--s2)', values: ms.map(o => o.n ? o.items : null) }] })}
-    <section class="card span-4"><div class="card-h"><div><h2>สถิติรายปี (พ.ศ.)</h2><p>คลิกแถวเพื่อกรองปี</p></div></div><table><thead><tr><th>ปี</th><th>คดี</th><th>ของกลาง</th><th>ชิ้น/คดี</th></tr></thead><tbody>${years}<tr><td><b>รวม</b></td><td><b>${n0(all.n)}</b></td><td><b>${n0(all.items)}</b></td><td><b>${n2(all.avg)}</b></td></tr></tbody></table></section>
-    <section class="card span-6"><div class="card-h"><div><h2>สถิติรายเดือน</h2><p>จำนวนคดี และของกลาง</p></div></div><div class="scroll" style="max-height:420px"><table><thead><tr><th>เดือน</th><th>คดี</th><th>ของกลาง (ชิ้น)</th><th>เฉลี่ยชิ้น/คดี</th></tr></thead><tbody>${ms.map(o => `<tr><td>${mFull(o)}</td><td>${o.n ? n0(o.n) : '—'}</td><td>${o.n ? n0(o.items) : '—'}</td><td>${o.n ? n2(o.items / o.n) : '—'}</td></tr>`).join('')}</tbody></table></div></section>
-    <section class="card span-6"><div class="card-h"><div><h2>10 คดีที่มีของกลางมากที่สุด</h2><p>${yr ? 'ปี ' + yr : 'ทุกปี'}</p></div></div><div class="scroll"><table><thead><tr><th class="l">เลข บก.</th><th class="l">สภ.</th><th class="l">จังหวัด</th><th>ของกลาง</th></tr></thead><tbody>${top.map(r => `<tr><td class="l">${esc(r.bk)}</td><td class="l">${esc(r.pol)}</td><td class="l">${esc(r.prov)}</td><td>${n0(r.items)}${r.items > M.thr ? ' <span class="badge bad">เกินเกณฑ์</span>' : ''}</td></tr>`).join('')}</tbody></table></div></section></div>`;
+    chartCard('span-8', { title: 'จำนวนคดีราย' + B.noun, sub: 'นับตามวันที่รับคดี' + (yr ? ` · ${selName(yr)}` : '') + (B.partial ? ' · เดือนแรก/เดือนสุดท้ายนับเฉพาะวันในช่วง' : ''), cats: labs, tipCats: tips, catLabel: B.noun, h: 260, labelMax: true, labelAll: few, series: [{ name: 'คดี', color: 'var(--s1)', values: ms.map(o => o.n || null) }] })}
+    <section class="card span-4"><div class="card-h"><div><h2>ไฮไลต์</h2><p>${selName(yr)}</p></div></div><ul class="hl">${hl}</ul></section>${
+    chartCard('span-8', { title: `ของกลางราย${B.noun} (ชิ้น)`, sub: (rg ? selName(yr) + ' · ' : '') + `บาง${B.noun}สูงจากคดีที่มีของกลางจำนวนมาก ดูคดีเหล่านั้นในตารางด้านล่าง`, cats: labs, tipCats: tips, catLabel: B.noun, h: 260, labelMax: true, labelAll: few, series: [{ name: 'ของกลาง (ชิ้น)', color: 'var(--s2)', values: ms.map(o => o.n ? o.items : null) }] })}
+    <section class="card span-4"><div class="card-h"><div><h2>สถิติรายปี (พ.ศ.)</h2><p>คลิกแถวเพื่อกรองปี${rg ? ' (ล้างช่วงที่เลือก)' : ''}</p></div></div><table><thead><tr><th>ปี</th><th>คดี</th><th>ของกลาง</th><th>ชิ้น/คดี</th></tr></thead><tbody>${years}<tr><td><b>รวม</b></td><td><b>${n0(all.n)}</b></td><td><b>${n0(all.items)}</b></td><td><b>${n2(all.avg)}</b></td></tr></tbody></table></section>
+    <section class="card span-6"><div class="card-h"><div><h2>สถิติราย${B.noun}</h2><p>จำนวนคดี และของกลาง${yr ? ' · ' + selName(yr) : ''}</p></div></div><div class="scroll" style="max-height:420px"><table><thead><tr><th>${B.noun}</th><th>คดี</th><th>ของกลาง (ชิ้น)</th><th>เฉลี่ยชิ้น/คดี</th></tr></thead><tbody>${ms.map(o => `<tr><td>${o.full}</td><td>${o.n ? n0(o.n) : '—'}</td><td>${o.n ? n0(o.items) : '—'}</td><td>${o.n ? n2(o.items / o.n) : '—'}</td></tr>`).join('')}</tbody></table></div></section>
+    <section class="card span-6"><div class="card-h"><div><h2>10 คดีที่มีของกลางมากที่สุด</h2><p>${selName(yr)}</p></div></div><div class="scroll"><table><thead><tr><th class="l">เลข บก.</th><th class="l">สภ.</th><th class="l">จังหวัด</th><th>ของกลาง</th></tr></thead><tbody>${top.map(r => `<tr><td class="l">${esc(r.bk)}</td><td class="l">${esc(r.pol)}</td><td class="l">${esc(r.prov)}</td><td>${n0(r.items)}${r.items > M.thr ? ' <span class="badge bad">เกินเกณฑ์</span>' : ''}</td></tr>`).join('')}</tbody></table></div></section></div>`;
+}
+/** เลือกหน้าของชีตคดีตามช่วงที่เลือก (ชิปปี หรือช่วงที่กำหนดเอง) */
+function casesView(){
+  const M = S.M, g = RG.c, sel = g || S.yr, chk = S.view === 'check';
+  if (g && (g.none || !M.rows.some(r => inSel(r, g) && (chk || r.counted)))) return emptyRange(M, g, chk);
+  return S.view === 'area' ? casesArea(M, sel) : S.view === 'monthly' ? casesMonthly(M, sel) : S.view === 'time' ? casesTime(M, sel) : chk ? casesCheck(M, sel) : casesOverview(M, sel);
 }
 function casesArea(M, yr){
   const rs = scope(M, yr), n = rs.length;
   const prov = groupCount(rs, r => r.prov || 'ไม่ระบุ'), pol = groupCount(rs, r => (r.pol || 'ไม่ระบุ') + '||' + r.prov).slice(0, 15);
   const typ = groupCount(rs, r => r.typ || 'ไม่ระบุ'), exa = groupCount(rs, r => r.exa || 'ไม่ระบุ');
   const typed = rs.filter(r => r.typ).length, exad = rs.filter(r => r.exa).length;
-  const kp = [kpi('a_p', 'จังหวัดที่ส่งตรวจ', n0(prov.length), `<span>${yr ? 'ปี ' + yr : 'ทุกปี'}</span>`, true), kpi('a_s', 'สภ. ที่ส่งตรวจ', n0(new Set(rs.map(r => r.pol)).size), `<span>จาก ${n0(n)} คดี</span>`),
+  const sn = selName(yr), kp = [kpi('a_p', 'จังหวัดที่ส่งตรวจ', n0(prov.length), `<span>${sn}</span>`, true), kpi('a_s', 'สภ. ที่ส่งตรวจ', n0(new Set(rs.map(r => r.pol)).size), `<span>จาก ${n0(n)} คดี</span>`),
     kpi('a_t', 'คดีที่ระบุประเภทแล้ว', n0(typed), `<span>${n ? (typed / n * 100).toFixed(1) : 0}% ของคดีทั้งหมด</span>`), kpi('a_e', 'คดีที่ระบุผู้ตรวจแล้ว', n0(exad), `<span>${n ? (exad / n * 100).toFixed(1) : 0}% ของคดีทั้งหมด</span>`)].join('');
   const asItems = a => a.map(o => ({ l: o.l, v: o.v, sub: o.items ? `ของกลาง ${n0(o.items)} ชิ้น` : '' }));
   return `<div class="kpis k4">${kp}</div><div class="grid">
-    <section class="card span-6"><div class="card-h"><div><h2>จำนวนคดีแยกตามจังหวัด</h2><p>เรียงจากมากไปน้อย</p></div></div>${hbars(asItems(prov))}</section>
-    <section class="card span-6"><div class="card-h"><div><h2>สภ. ที่ส่งตรวจมากที่สุด 15 อันดับ</h2><p>จำนวนคดี</p></div></div>${hbars(pol.map(o => { const [p, v] = o.l.split('||'); return { l: p, tag: v, v: o.v, sub: o.items ? `ของกลาง ${n0(o.items)} ชิ้น` : '' }; }))}</section>
-    <section class="card span-6"><div class="card-h"><div><h2>ประเภทคดี</h2><p>${typed ? 'ตามที่เลือกในคอลัมน์ ประเภทคดี (เลือก)' : 'ยังไม่มีการเลือกประเภทคดีในแท็บข้อมูลคดี'}</p></div></div>${hbars(typ.map(o => ({ ...o, c: o.l === 'ไม่ระบุ' ? 'var(--s2)' : null })))}</section>
-    <section class="card span-6"><div class="card-h"><div><h2>ผู้ตรวจ</h2><p>${exad ? 'ตามที่เลือกในคอลัมน์ ผู้ตรวจ (เลือก)' : 'ยังไม่มีการเลือกผู้ตรวจในแท็บข้อมูลคดี'}</p></div></div>${hbars(exa.map(o => ({ ...o, c: o.l === 'ไม่ระบุ' ? 'var(--s2)' : null })))}</section></div>`;
+    <section class="card span-6"><div class="card-h"><div><h2>จำนวนคดีแยกตามจังหวัด</h2><p>เรียงจากมากไปน้อย · ${sn}</p></div></div>${hbars(asItems(prov))}</section>
+    <section class="card span-6"><div class="card-h"><div><h2>สภ. ที่ส่งตรวจมากที่สุด 15 อันดับ</h2><p>จำนวนคดี · ${sn}</p></div></div>${hbars(pol.map(o => { const [p, v] = o.l.split('||'); return { l: p, tag: v, v: o.v, sub: o.items ? `ของกลาง ${n0(o.items)} ชิ้น` : '' }; }))}</section>
+    <section class="card span-6"><div class="card-h"><div><h2>ประเภทคดี</h2><p>${typed ? 'ตามที่เลือกในคอลัมน์ ประเภทคดี (เลือก)' : 'ยังไม่มีการเลือกประเภทคดีในแท็บข้อมูลคดี'} · ${sn}</p></div></div>${hbars(typ.map(o => ({ ...o, c: o.l === 'ไม่ระบุ' ? 'var(--s2)' : null })))}</section>
+    <section class="card span-6"><div class="card-h"><div><h2>ผู้ตรวจ</h2><p>${exad ? 'ตามที่เลือกในคอลัมน์ ผู้ตรวจ (เลือก)' : 'ยังไม่มีการเลือกผู้ตรวจในแท็บข้อมูลคดี'} · ${sn}</p></div></div>${hbars(exa.map(o => ({ ...o, c: o.l === 'ไม่ระบุ' ? 'var(--s2)' : null })))}</section></div>`;
 }
 function casesTime(M, yr){
   const rs = scope(M, yr), d1 = rs.map(r => r.d1).filter(v => v != null), d2 = rs.map(r => r.d2).filter(v => v != null);
-  const ms = monthsOf(rs), pend = rs.filter(r => !r.done);
+  const B = seriesOf(rs, yr), ms = B.list, pend = rs.filter(r => !r.done), sn = selName(yr);
   const kp = [kpi('t_a', 'รับ → ตรวจเสร็จ เฉลี่ย (วัน)', d1.length ? n1(meanOf(d1)) : '—', `<span>จาก ${n0(d1.length)} คดีที่ระบุวันตรวจเสร็จ</span>`, true),
     kpi('t_m', 'มัธยฐาน (วัน)', d1.length ? n0(medianOf(d1)) : '—', `<span>เร็วสุด ${d1.length ? n0(Math.min(...d1)) : '—'} · นานสุด ${d1.length ? n0(Math.max(...d1)) : '—'} วัน</span>`),
     kpi('t_p', 'เสร็จ → มารับผล มัธยฐาน (วัน)', d2.length ? n0(medianOf(d2)) : '—', `<span>จาก ${n0(d2.length)} คดี</span>`),
@@ -773,20 +1052,20 @@ function casesTime(M, yr){
   const bk = [['ไม่เกิน 14 วัน', 0, 14], ['15 – 21 วัน', 15, 21], ['22 – 28 วัน', 22, 28], ['29 – 35 วัน', 29, 35], ['มากกว่า 35 วัน', 36, 1e9]].map(([l, a, b]) => ({ l, v: d1.filter(x => x >= a && x <= b).length }));
   const f = S.pendF, list = pend.filter(r => f === 'all' || (f === 'wait' ? r.wait : !r.wait)).sort((x, y) => x.t - y.t), shown = list.slice(0, S.pendLimit);
   return `<div class="kpis k4">${kp}</div><div class="grid">${
-    chartCard('span-8', { title: 'ระยะเวลาตรวจเฉลี่ยรายเดือน (วัน)', sub: 'จากวันที่รับ ถึงวันที่ตรวจเสร็จ จัดกลุ่มตามเดือนที่รับคดี', type: 'line', cats: ms.map(mShort), tipCats: ms.map(mFull), catLabel: 'เดือนที่รับ', h: 260, labelAll: ms.length <= 14, vfmt: n0, fmt: n1, yfmt: v => String(+v.toFixed(1)),
+    chartCard('span-8', { title: `ระยะเวลาตรวจเฉลี่ยราย${B.noun} (วัน)`, sub: `จากวันที่รับ ถึงวันที่ตรวจเสร็จ จัดกลุ่มตาม${B.noun}ที่รับคดี${yr ? ' · ' + sn : ''}`, type: 'line', cats: ms.map(o => o.lab), tipCats: ms.map(o => o.full), catLabel: B.noun + 'ที่รับ', h: 260, labelAll: ms.length <= 14, vfmt: n0, fmt: n1, yfmt: v => String(+v.toFixed(1)),
       series: [{ name: 'วันเฉลี่ย', color: 'var(--s1)', values: ms.map(o => o.d1.length ? meanOf(o.d1) : null) }] })}
-    <section class="card span-4"><div class="card-h"><div><h2>สถานะคดี</h2><p>${yr ? 'ปี ' + yr : 'ทุกปี'}</p></div></div>${hbars(st)}<div class="card-h" style="margin-top:18px"><div><h2>การกระจายของระยะเวลาตรวจ</h2></div></div>${hbars(bk)}</section>
-    <section class="card span-12"><div class="card-h"><div><h2>คดีที่ยังไม่รับผล</h2><p>เรียงจากค้างนานที่สุด · ${n0(list.length)} คดี</p></div><select class="sel" id="pendF" aria-label="กรองสถานะ"><option value="all"${f === 'all' ? ' selected' : ''}>ทุกสถานะ</option><option value="prog"${f === 'prog' ? ' selected' : ''}>กำลังดำเนินการ</option><option value="wait"${f === 'wait' ? ' selected' : ''}>เสร็จแล้ว รอรับผล</option></select></div>
+    <section class="card span-4"><div class="card-h"><div><h2>สถานะคดี</h2><p>${sn}</p></div></div>${hbars(st)}<div class="card-h" style="margin-top:18px"><div><h2>การกระจายของระยะเวลาตรวจ</h2></div></div>${hbars(bk)}</section>
+    <section class="card span-12"><div class="card-h"><div><h2>คดีที่ยังไม่รับผล</h2><p>เรียงจากค้างนานที่สุด · ${n0(list.length)} คดี · รับในช่วง ${sn}</p></div><select class="sel" id="pendF" aria-label="กรองสถานะ"><option value="all"${f === 'all' ? ' selected' : ''}>ทุกสถานะ</option><option value="prog"${f === 'prog' ? ' selected' : ''}>กำลังดำเนินการ</option><option value="wait"${f === 'wait' ? ' selected' : ''}>เสร็จแล้ว รอรับผล</option></select></div>
       <div class="scroll"><table><thead><tr><th class="l">เลข บก.</th><th class="l">สภ.</th><th class="l">จังหวัด</th><th class="l">วันที่รับ</th><th>ค้างมาแล้ว (วัน)</th><th>ของกลาง</th><th class="l">สถานะ</th></tr></thead><tbody>${shown.map(r => `<tr><td class="l">${esc(r.bk)}</td><td class="l">${esc(r.pol)}</td><td class="l">${esc(r.prov)}</td><td class="l">${new Date(r.t).getUTCDate()} ${CAL[r.m-1]} ${r.by}</td><td>${n0(ageDays(r))}</td><td>${n0(r.items)}</td><td class="l"><span class="badge${r.wait ? ' ok' : ''}">${esc(statusOf(r))}</span></td></tr>`).join('')}</tbody></table></div>${
       list.length > shown.length ? `<div style="text-align:center;padding:12px"><button class="btn ghost" id="morePend">แสดงเพิ่ม (เหลือ ${list.length - shown.length})</button></div>` : ''}</section></div>`;
 }
-function casesCheck(M){
-  const fl = M.rows.filter(r => r.flag), reasons = new Map();
+function casesCheck(M, sel){
+  const rows = M.rows.filter(r => inSel(r, sel)), fl = rows.filter(r => r.flag), reasons = new Map(), sn = selName(sel);
   fl.forEach(r => r.flag.split(';').map(s => s.trim()).filter(Boolean).forEach(k => reasons.set(k, (reasons.get(k) || 0) + 1)));
-  const notCounted = M.rows.filter(r => !r.counted).length;
-  const kp = [kpi('k_f', 'แถวที่มีข้อสังเกต', n0(fl.length), 'จากคอลัมน์ ข้อสังเกต (ผิดปกติ) ในชีต', true), kpi('k_r', 'ชนิดของข้อสังเกต', n0(reasons.size), 'แยกตามเหตุผล'), kpi('k_n', 'แถวที่ไม่นับในสถิติ', n0(notCounted), 'คอลัมน์ นับในสถิติ = 0'), kpi('k_t', 'เกณฑ์ของกลางผิดปกติ', n0(M.thr) + ' ชิ้น', 'ตั้งค่าในชีต')].join('');
-  return `<div class="kpis k4">${kp}</div><div class="grid"><section class="card span-4"><div class="card-h"><div><h2>สรุปตามเหตุผล</h2></div></div>${hbars([...reasons].map(([l, v]) => ({ l, v })).sort((a, b) => b.v - a.v))}</section>
-    <section class="card span-8"><div class="card-h"><div><h2>รายการที่ควรตรวจสอบกับต้นฉบับ</h2><p>${n0(fl.length)} แถว</p></div></div><div class="scroll" style="max-height:560px"><table><thead><tr><th class="l">เลข บก.</th><th class="l">เลขรายงาน</th><th class="l">สภ.</th><th>ของกลาง</th><th class="l">ข้อสังเกต</th><th>นับในสถิติ</th></tr></thead><tbody>${fl.map(r => `<tr><td class="l">${esc(r.bk)}</td><td class="l">${esc(r.rep)}</td><td class="l">${esc(r.pol)}</td><td>${n0(r.items)}</td><td class="l w">${r.flag.split(';').map(s => s.trim()).filter(Boolean).map(s => `<span class="badge">${esc(s)}</span>`).join('')}</td><td>${r.counted ? 'ใช่' : 'ไม่'}</td></tr>`).join('')}</tbody></table></div></section></div>`;
+  const notCounted = rows.filter(r => !r.counted).length;
+  const kp = [kpi('k_f', 'แถวที่มีข้อสังเกต', n0(fl.length), 'จากคอลัมน์ ข้อสังเกต (ผิดปกติ) · ' + sn, true), kpi('k_r', 'ชนิดของข้อสังเกต', n0(reasons.size), 'แยกตามเหตุผล'), kpi('k_n', 'แถวที่ไม่นับในสถิติ', n0(notCounted), 'คอลัมน์ นับในสถิติ = 0'), kpi('k_t', 'เกณฑ์ของกลางผิดปกติ', n0(M.thr) + ' ชิ้น', 'ตั้งค่าในชีต')].join('');
+  return `<div class="kpis k4">${kp}</div><div class="grid"><section class="card span-4"><div class="card-h"><div><h2>สรุปตามเหตุผล</h2><p>${sn}</p></div></div>${hbars([...reasons].map(([l, v]) => ({ l, v })).sort((a, b) => b.v - a.v))}</section>
+    <section class="card span-8"><div class="card-h"><div><h2>รายการที่ควรตรวจสอบกับต้นฉบับ</h2><p>${n0(fl.length)} แถว · วันที่รับ ${sn}</p></div></div><div class="scroll" style="max-height:560px"><table><thead><tr><th class="l">เลข บก.</th><th class="l">เลขรายงาน</th><th class="l">สภ.</th><th>ของกลาง</th><th class="l">ข้อสังเกต</th><th>นับในสถิติ</th></tr></thead><tbody>${fl.map(r => `<tr><td class="l">${esc(r.bk)}</td><td class="l">${esc(r.rep)}</td><td class="l">${esc(r.pol)}</td><td>${n0(r.items)}</td><td class="l w">${r.flag.split(';').map(s => s.trim()).filter(Boolean).map(s => `<span class="badge">${esc(s)}</span>`).join('')}</td><td>${r.counted ? 'ใช่' : 'ไม่'}</td></tr>`).join('')}</tbody></table></div></section></div>`;
 }
 
 
@@ -795,7 +1074,8 @@ function casesMonthly(M, yr){
   const UN = 'ไม่ระบุ', UE = 'ไม่ระบุผู้ตรวจ';
   const rs = scope(M, yr), ms = monthsOf(rs).filter(o => o.n), N = rs.length;
   if (S.cm && !ms.some(o => o.k === S.cm)) S.cm = 0;
-  const rsm = S.cm ? rs.filter(r => r.y*100 + r.m === S.cm) : rs, mLab = S.cm ? mFull(ms.find(o => o.k === S.cm)) : 'ทุกเดือน';
+  const rg = isRange(yr), sn = selName(yr), rsm = S.cm ? rs.filter(r => r.y*100 + r.m === S.cm) : rs, mLab = S.cm ? mFull(ms.find(o => o.k === S.cm)) + (rg ? ' (ในช่วงที่เลือก)' : '') : rg ? 'ทั้งช่วงที่เลือก' : 'ทุกเดือน';
+  const part = rg && (new Date(yr.a).getUTCDate() !== 1 || new Date(yr.b + DAY).getUTCDate() !== 1);
   const tc = new Map(); rs.forEach(r => r.typ && tc.set(r.typ, (tc.get(r.typ) || 0) + 1));
   const topT = [...tc].sort((a, b) => b[1] - a[1]).map(x => x[0]), shownT = topT.slice(0, 5), other = topT.length > 5;
   const tkey = r => !r.typ ? UN : shownT.includes(r.typ) ? r.typ : 'อื่นๆ';
@@ -804,14 +1084,14 @@ function casesMonthly(M, yr){
   const pickT = a => S.hideUn ? a.filter(r => r.typ) : a, pickE = a => S.hideUn ? a.filter(r => r.exa) : a;
   const typed = rs.filter(r => r.typ).length, exad = rs.filter(r => r.exa).length;
   const cov = (typed < N * .5 || exad < N * .5) ? `<div class="msg warn"><b>ข้อมูลที่แยกตามประเภทคดี/ผู้ตรวจยังน้อย:</b> ตอนนี้ระบุประเภทคดีแล้ว ${n0(typed)} จาก ${n0(N)} คดี (${N ? (typed / N * 100).toFixed(1) : 0}%) และระบุผู้ตรวจแล้ว ${n0(exad)} คดี (${N ? (exad / N * 100).toFixed(1) : 0}%) · ตารางด้านล่างจะเต็มขึ้นเองเมื่อเลือกค่าในคอลัมน์ "ประเภทคดี (เลือก)" และ "ผู้ตรวจ (เลือก)" ในแท็บข้อมูลคดี</div>` : '';
-  const toolbar = `<div class="toolbar"><label for="cmSel"><b>เดือนที่รับคดี</b></label><select class="sel" id="cmSel"><option value="0">ทุกเดือน (${n0(N)} คดี)</option>${ms.map(o => `<option value="${o.k}"${o.k === S.cm ? ' selected' : ''}>${mFull(o)} (${n0(o.n)} คดี)</option>`).join('')}</select><label><input type="checkbox" id="hideUn"${S.hideUn ? ' checked' : ''}> ซ่อนคดีที่ไม่ระบุประเภท/ผู้ตรวจ</label></div>`;
+  const toolbar = `<div class="toolbar"><label for="cmSel"><b>เดือนที่รับคดี</b></label><select class="sel" id="cmSel"><option value="0">${rg ? 'ทั้งช่วงที่เลือก' : 'ทุกเดือน'} (${n0(N)} คดี)</option>${ms.map(o => `<option value="${o.k}"${o.k === S.cm ? ' selected' : ''}>${mFull(o)} (${n0(o.n)} คดี)</option>`).join('')}</select><label><input type="checkbox" id="hideUn"${S.hideUn ? ' checked' : ''}> ซ่อนคดีที่ไม่ระบุประเภท/ผู้ตรวจ</label></div>`;
   // A) ประเภทคดีรายเดือน
   const rsT = pickT(rs), per = ms.map(o => rsT.filter(r => r.y*100 + r.m === o.k));
-  const chart = chartCard('span-7', { title: 'ประเภทคดีรายเดือน', sub: 'จำนวนคดีแยกตามประเภท · นับตามวันที่รับ', cats: ms.map(mShort), tipCats: ms.map(mFull), catLabel: 'เดือน', h: 280, stacked: true,
+  const chart = chartCard('span-7', { title: 'ประเภทคดีรายเดือน', sub: 'จำนวนคดีแยกตามประเภท · นับตามวันที่รับ · ' + sn + (part ? ' · เดือนแรก/เดือนสุดท้ายนับเฉพาะวันในช่วง' : ''), cats: ms.map(mShort), tipCats: ms.map(mFull), catLabel: 'เดือน', h: 280, stacked: true,
     series: tcols.map(k => ({ name: k, color: tcol(k), values: per.map(a => a.filter(r => tkey(r) === k).length) })) });
   const topOf = a => { const c = new Map(); a.forEach(r => { if (r.typ) { const k = tkey(r); c.set(k, (c.get(k) || 0) + 1); } }); const t = [...c].sort((x, y) => y[1] - x[1])[0]; return t ? `${t[0]} (${n0(t[1])})` : '—'; };
-  const tTable = `<section class="card span-5"><div class="card-h"><div><h2>ประเภทคดีที่มากที่สุดในแต่ละเดือน</h2><p>นับเฉพาะคดีที่ระบุประเภทแล้ว</p></div></div><div class="scroll" style="max-height:340px"><table><thead><tr><th>เดือน</th><th>คดี</th><th class="l">ประเภทสูงสุด (จำนวน)</th></tr></thead><tbody>${ms.map((o, i) => `<tr><td>${mFull(o)}</td><td>${n0(o.n)}</td><td class="l">${esc(topOf(per[i]))}</td></tr>`).join('')}</tbody></table></div></section>`;
-  const mTable = `<section class="card span-12"><div class="card-h"><div><h2>จำนวนคดีแยกประเภท รายเดือน</h2><p>ตารางตัวเลขของกราฟด้านบน</p></div></div><div class="scroll"><table class="mx"><thead><tr><th>เดือน</th>${tcols.map(k => `<th>${esc(k)}</th>`).join('')}<th>รวม</th></tr></thead><tbody>${ms.map((o, i) => `<tr><td>${mFull(o)}</td>${tcols.map(k => { const v = per[i].filter(r => tkey(r) === k).length; return v ? `<td>${n0(v)}</td>` : '<td class="z">·</td>'; }).join('')}<td><b>${n0(per[i].length)}</b></td></tr>`).join('')}</tbody></table></div></section>`;
+  const tTable = `<section class="card span-5"><div class="card-h"><div><h2>ประเภทคดีที่มากที่สุดในแต่ละเดือน</h2><p>นับเฉพาะคดีที่ระบุประเภทแล้ว · ${sn}</p></div></div><div class="scroll" style="max-height:340px"><table><thead><tr><th>เดือน</th><th>คดี</th><th class="l">ประเภทสูงสุด (จำนวน)</th></tr></thead><tbody>${ms.map((o, i) => `<tr><td>${mFull(o)}</td><td>${n0(o.n)}</td><td class="l">${esc(topOf(per[i]))}</td></tr>`).join('')}</tbody></table></div></section>`;
+  const mTable = `<section class="card span-12"><div class="card-h"><div><h2>จำนวนคดีแยกประเภท รายเดือน</h2><p>ตารางตัวเลขของกราฟด้านบน · ${sn}</p></div></div><div class="scroll"><table class="mx"><thead><tr><th>เดือน</th>${tcols.map(k => `<th>${esc(k)}</th>`).join('')}<th>รวม</th></tr></thead><tbody>${ms.map((o, i) => `<tr><td>${mFull(o)}</td>${tcols.map(k => { const v = per[i].filter(r => tkey(r) === k).length; return v ? `<td>${n0(v)}</td>` : '<td class="z">·</td>'; }).join('')}<td><b>${n0(per[i].length)}</b></td></tr>`).join('')}</tbody></table></div></section>`;
   // ตารางไขว้ทั่วไป
   const xtab = (rows, rk, cols, ck, kind, emptyLabel) => {
     const m = new Map(); rows.forEach(r => { const k = rk(r); const o = m.get(k) || { k, t: 0, c: {} }; o.t++; const c = ck(r); o.c[c] = (o.c[c] || 0) + 1; m.set(k, o); });
@@ -826,10 +1106,10 @@ function casesMonthly(M, yr){
     const mx = Math.max(1, ...list.flatMap(o => ms.map(x => o.c[x.k] || 0)));
     return `<div class="scroll"><table class="mx"><thead><tr><th>${kind === 'prov' ? 'จังหวัด' : 'ผู้ตรวจ'}</th>${ms.map(o => `<th>${mShort(o)}</th>`).join('')}<th>รวม</th></tr></thead><tbody>${list.map(o => `<tr data-dk="${kind}" data-dv="${esc(o.k)}"${S.drill && S.drill.k === kind && S.drill.v === o.k ? ' class="dr"' : ''}><td>${esc(o.k)}</td>${ms.map(x => { const v = o.c[x.k] || 0; return v ? `<td style="background:color-mix(in srgb,var(--s1) ${Math.round(v / mx * 45)}%,transparent)">${n0(v)}</td>` : '<td class="z">·</td>'; }).join('')}<td><b>${n0(o.t)}</b></td></tr>`).join('')}</tbody></table></div>`;
   };
-  const provCard = `<section class="card span-12"><div class="card-h"><div><h2>แต่ละจังหวัดมีคดีอะไรบ้าง · ${esc(mLab)}</h2><p>จำนวนคดีแยกตามประเภท · คลิกแถวเพื่อดูรายการคดี</p></div></div>${xtab(pickT(rsm), r => r.prov || 'ไม่ระบุ', tcols, tkey, 'prov', 'ไม่มีคดีในเดือนนี้')}</section>`;
-  const exaCols = tcols, exaCard = `<section class="card span-12"><div class="card-h"><div><h2>ผู้ตรวจแต่ละคนได้คดีอะไรบ้าง · ${esc(mLab)}</h2><p>จำนวนคดีแยกตามประเภท · คลิกแถวเพื่อดูรายการคดี</p></div></div>${xtab(pickE(rsm), r => r.exa || UE, exaCols, tkey, 'exa', 'ไม่มีคดีที่ระบุผู้ตรวจในเดือนนี้')}</section>`;
-  const provMx = `<section class="card span-12"><div class="card-h"><div><h2>จังหวัด × เดือน</h2><p>จำนวนคดีทั้งหมดของแต่ละจังหวัดในแต่ละเดือน</p></div></div>${mxtab(rs, r => r.prov || 'ไม่ระบุ', 'prov')}</section>`;
-  const exaMx = `<section class="card span-12"><div class="card-h"><div><h2>ผู้ตรวจ × เดือน</h2><p>จำนวนคดีที่ผู้ตรวจแต่ละคนได้รับในแต่ละเดือน</p></div></div>${mxtab(pickE(rs), r => r.exa || UE, 'exa')}</section>`;
+  const provCard = `<section class="card span-12"><div class="card-h"><div><h2>แต่ละจังหวัดมีคดีอะไรบ้าง · ${esc(mLab)}</h2><p>จำนวนคดีแยกตามประเภท · ${sn} · คลิกแถวเพื่อดูรายการคดี</p></div></div>${xtab(pickT(rsm), r => r.prov || 'ไม่ระบุ', tcols, tkey, 'prov', 'ไม่มีคดีในเดือนนี้')}</section>`;
+  const exaCols = tcols, exaCard = `<section class="card span-12"><div class="card-h"><div><h2>ผู้ตรวจแต่ละคนได้คดีอะไรบ้าง · ${esc(mLab)}</h2><p>จำนวนคดีแยกตามประเภท · ${sn} · คลิกแถวเพื่อดูรายการคดี</p></div></div>${xtab(pickE(rsm), r => r.exa || UE, exaCols, tkey, 'exa', 'ไม่มีคดีที่ระบุผู้ตรวจในเดือนนี้')}</section>`;
+  const provMx = `<section class="card span-12"><div class="card-h"><div><h2>จังหวัด × เดือน</h2><p>จำนวนคดีทั้งหมดของแต่ละจังหวัดในแต่ละเดือน · ${sn}</p></div></div>${mxtab(rs, r => r.prov || 'ไม่ระบุ', 'prov')}</section>`;
+  const exaMx = `<section class="card span-12"><div class="card-h"><div><h2>ผู้ตรวจ × เดือน</h2><p>จำนวนคดีที่ผู้ตรวจแต่ละคนได้รับในแต่ละเดือน · ${sn}</p></div></div>${mxtab(pickE(rs), r => r.exa || UE, 'exa')}</section>`;
   let drill = '';
   if (S.drill) { const d = S.drill, list = rsm.filter(r => (d.k === 'prov' ? (r.prov || 'ไม่ระบุ') : (r.exa || UE)) === d.v).sort((a, b) => a.t - b.t), shown = list.slice(0, 200);
     drill = `<section class="card span-12" id="drillCard"><div class="card-h"><div><h2>รายการคดี · ${esc(d.v)} · ${esc(mLab)}</h2><p>${n0(list.length)} คดี${list.length > shown.length ? ' (แสดง 200 คดีแรก)' : ''} · คลิกแถวเดิมอีกครั้งเพื่อปิด</p></div></div><div class="scroll" style="max-height:480px"><table><thead><tr><th class="l">เลข บก.</th><th class="l">สภ.</th><th class="l">จังหวัด</th><th class="l">วันที่รับ</th><th class="l">ประเภทคดี</th><th class="l">ผู้ตรวจ</th><th>ของกลาง</th><th class="l">สถานะ</th></tr></thead><tbody>${shown.map(r => `<tr><td class="l">${esc(r.bk)}</td><td class="l">${esc(r.pol)}</td><td class="l">${esc(r.prov)}</td><td class="l">${new Date(r.t).getUTCDate()} ${CAL[r.m-1]} ${r.by}</td><td class="l">${r.typ ? esc(r.typ) : '<span class="badge ok">ไม่ระบุ</span>'}</td><td class="l">${r.exa ? esc(r.exa) : '<span class="badge ok">ไม่ระบุ</span>'}</td><td>${n0(r.items)}</td><td class="l"><span class="badge${r.done ? ' ok' : ''}">${esc(statusOf(r))}</span></td></tr>`).join('')}</tbody></table></div></section>`; }
@@ -909,7 +1189,7 @@ document.addEventListener('visibilitychange', () => { const s = cur(); if (!docu
 /* เมนูของแม่แบบ lab ขึ้นกับแท็บที่มีจริง (ชีต Lot พัสดุ = เมนู Lot อย่างเดียว) */
 const navOf = tpl => !tpl ? [] : TPL[tpl].nav.map(n => n[0]).filter(v => tpl !== 'lab' || !S.M || !S.M.has || S.M.has[v === 'overview' ? 'cases' : v]);
 const homeView = () => navOf(S.tpl)[0] || 'sources';
-function resetView(tpl){ S.fy = null; S.yr = 0; S.lotQ = ''; S.lotLimit = 25; S.pendLimit = 25; S.pendF = 'all'; S.cm = 0; S.drill = null; S.prevKpi = {}; if (!validViews(tpl).includes(S.view)) S.view = homeView(); }
+function resetView(tpl){ S.fy = null; S.yr = 0; S.lotQ = ''; S.lotLimit = 25; S.pendLimit = 25; S.pendF = 'all'; S.cm = 0; S.drill = null; S.prevKpi = {}; restoreSel(tpl); if (!validViews(tpl).includes(S.view)) S.view = homeView(); }
 async function activate(id){
   clearTimeout(pollT); S.gen++; S.busy = false; S.active = id; S.sig = ''; persist();
   const s = cur(); if (s) { s.state = 'busy'; s.err = ''; } S.M = null; S.tpl = null; S.error = ''; render();
@@ -1165,9 +1445,10 @@ function renderChrome(){
   fillSel();
   const showChips = S.M && S.view !== 'sources' && S.view !== 'users', bar = $('#fyBar'); bar.hidden = !showChips;
   if (showChips) { $('#fyL').textContent = T.chipLabel;
-    const items = S.tpl === 'lab' ? S.M.years.map(y => [y, String(y), y === S.fy] ) : [[0, 'ทั้งหมด', S.yr === 0], ...S.M.years.map(y => [y, String(y), y === S.yr])];
+    const items = S.tpl === 'lab' ? S.M.years.map(y => [y, String(y), y === S.fy && !RG.l] ) : [[0, 'ทั้งหมด', S.yr === 0 && !RG.c], ...S.M.years.map(y => [y, String(y), y === S.yr && !RG.c])];
     $('#chips').innerHTML = items.map(([v, l, on]) => `<button class="chip" data-y="${v}" aria-pressed="${on}">${l}</button>`).join('');
-    const act = document.querySelector('.chip[aria-pressed="true"]'); act && act.scrollIntoView({ block: 'nearest', inline: 'center' }); }
+    const act = document.querySelector('#chips .chip[aria-pressed="true"]'); act && act.scrollIntoView({ block: 'nearest', inline: 'center' }); }
+  renderRange(showChips);
 }
 function render(){
   if (S.M && S.tpl === 'lab' && S.fy == null) S.fy = (() => { const f = S.M.years.filter(y => yearStat(S.M, y).months >= 6); return f.length ? f.at(-1) : S.M.years.at(-1); })();
@@ -1180,12 +1461,11 @@ function render(){
   else if (S.view === 'users' && S.admin) html = viewUsers();
   else if (!S.M) { const s = cur();
     html = S.error ? `<div class="card"><div class="msg err"><b>แสดงข้อมูลไม่ได้</b><br>${esc(S.error)}</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px"><button class="btn" data-act="retry">ลองใหม่</button><a class="btn ghost" href="#sources" style="text-decoration:none">ไปหน้าแหล่งข้อมูล</a></div></div>` : '<div class="card empty">กำลังโหลดข้อมูล…</div>'; }
-  else html = S.tpl === 'lab' ? (S.view === 'budget' ? labBudget(S.M, S.fy) : S.view === 'lot' ? labLot(S.M, S.fy) : labOverview(S.M, S.fy))
-    : (S.view === 'area' ? casesArea(S.M, S.yr) : S.view === 'monthly' ? casesMonthly(S.M, S.yr) : S.view === 'time' ? casesTime(S.M, S.yr) : S.view === 'check' ? casesCheck(S.M) : casesOverview(S.M, S.yr));
+  else html = S.tpl === 'lab' ? labView() : casesView();
   if (S.M && S.tpl === 'lab' && S.view !== 'sources' && S.view !== 'users' && S.M.missing && S.M.missing.length) html = labGap(S.M) + html;
   $('#view').innerHTML = html; mountCharts(); setStatus(); bindView();
   const ln = $('#lotN'), lc = $('#lotCount'); if (ln && lc) lc.textContent = ln.textContent;
-  const cu = {}; document.querySelectorAll('[data-flash]').forEach(e => { const k = S.active + S.view + e.dataset.flash + S.fy + S.yr; cu[k] = e.textContent; if (k in S.prevKpi && S.prevKpi[k] !== e.textContent) e.classList.add('flash'); });
+  const cu = {}; document.querySelectorAll('[data-flash]').forEach(e => { const k = S.active + S.view + e.dataset.flash + S.fy + S.yr + (RG.c ? RG.c.a + '-' + RG.c.b : '') + (RG.l ? RG.l.a + '-' + RG.l.b : ''); cu[k] = e.textContent; if (k in S.prevKpi && S.prevKpi[k] !== e.textContent) e.classList.add('flash'); });
   S.prevKpi = cu;
 }
 function bindView(){
@@ -1194,8 +1474,8 @@ function bindView(){
   if (S.form && S.view === 'sources') bindForm();
   if (S.view === 'users' && S.admin) { if (S.pform) bindPForm(); bindPeople(); }
   if (S.refocus) { const q = S.refocus; S.refocus = null; const row = [...document.querySelectorAll('tr[data-fy],tr[data-yr],tr[data-dk]')].find(r => (r.dataset.fy || r.dataset.yr || r.dataset.dk + '|' + r.dataset.dv) === q); const b = row && row.querySelector('.rowbtn'); if (b) b.focus(); }
-  document.querySelectorAll('tr[data-fy]').forEach(r => r.onclick = () => { S.fy = +r.dataset.fy; S.refocus = r.dataset.fy; render(); });
-  document.querySelectorAll('tr[data-yr]').forEach(r => r.onclick = () => { S.yr = +r.dataset.yr; S.refocus = r.dataset.yr; render(); });
+  document.querySelectorAll('tr[data-fy]').forEach(r => r.onclick = () => { S.fy = +r.dataset.fy; RG.l = null; S.refocus = r.dataset.fy; saveSel(); render(); });
+  document.querySelectorAll('tr[data-yr]').forEach(r => r.onclick = () => { S.yr = +r.dataset.yr; RG.c = null; S.refocus = r.dataset.yr; saveSel(); render(); });
   const q = $('#lotQ'); if (q) q.oninput = () => { S.lotQ = q.value; S.lotLimit = 25; $('#lotTbl').innerHTML = lotTable(S.M, S.fy); $('#lotCount').textContent = $('#lotN').textContent; bindView(); };
   const ml = $('#moreLot'); if (ml) ml.onclick = () => { S.lotLimit += 50; const y = scrollY; render(); scrollTo(0, y); };
   const mp = $('#morePend'); if (mp) mp.onclick = () => { S.pendLimit += 50; const y = scrollY; render(); scrollTo(0, y); };
@@ -1223,7 +1503,8 @@ document.addEventListener('click', e => {
   else if (a === 'pdel') { if (b.dataset.arm) personAct('adminRemoveUser', [id], b); else { b.dataset.arm = '1'; b.textContent = b.dataset.self ? 'ยืนยันลบตัวเอง?' : 'ยืนยันลบ?'; setTimeout(() => { b.textContent = 'ลบ'; delete b.dataset.arm; }, 3000); } }
   else if (a === 'del') { if (b.dataset.arm) removeSource(id, b); else { b.dataset.arm = '1'; b.textContent = 'ยืนยันลบ?'; setTimeout(() => { b.textContent = 'ลบ'; delete b.dataset.arm; }, 3000); } }
 });
-$('#chips').addEventListener('click', e => { const b = e.target.closest('[data-y]'); if (!b) return; const v = +b.dataset.y; if (S.tpl === 'lab') S.fy = v; else S.yr = v; S.lotLimit = 25; S.pendLimit = 25; render(); });
+$('#chips').addEventListener('click', e => { const b = e.target.closest('[data-y]'); if (!b) return; const v = +b.dataset.y;   // ชิปปีล้างช่วงที่เลือกเอง
+  if (S.tpl === 'lab') { S.fy = v; RG.l = null; } else { S.yr = v; RG.c = null; } RG.open = false; S.lotLimit = 25; S.pendLimit = 25; saveSel(); render(); });
 function route(){ const v = (location.hash || '#overview').slice(1); S.view = v || 'overview'; S.lotLimit = 25; S.pendLimit = 25; if (!validViews(S.tpl).includes(S.view) && S.M) S.view = homeView(); render(); scrollTo(0, 0); }
 addEventListener('hashchange', route);
 $('#skip').onclick = e => { e.preventDefault(); $('#view').focus(); };
